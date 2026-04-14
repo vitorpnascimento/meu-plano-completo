@@ -25,12 +25,13 @@ import {
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
 interface MealItem {
-  id:   string
-  name: string
-  kcal: number
-  p:    number
-  c:    number
-  f:    number
+  id:      string
+  name:    string
+  kcal:    number
+  p:       number
+  c:       number
+  f:       number
+  unitQty?: number   // present only for unit-based foods (Ovo, Pão, Fruta…)
 }
 
 interface Meal {
@@ -572,11 +573,19 @@ export default function Home() {
       const normalizedMeals: Meal[] = mealsRaw.map((m: any) => ({
         id:    m?.id    || newId(),
         title: m?.title || '',
-        items: Array.isArray(m?.items)
+        items: (Array.isArray(m?.items)
           ? m.items
           : m?.items && typeof m.items === 'object'
             ? Object.values(m.items)
-            : [],
+            : []
+        ).map((it: any) => {
+          // Auto-init unitQty from name "(X un)" for items saved before this field existed
+          if (it != null && it.unitQty === undefined) {
+            const m2 = /\((\d+)\s*un\)/i.exec(it.name || '')
+            if (m2) return { ...it, unitQty: parseInt(m2[1], 10) }
+          }
+          return it
+        }),
       }))
       setMeals(normalizedMeals)
     }
@@ -864,6 +873,40 @@ export default function Home() {
     save({ meals: nm, alternatives: na, activeSubs: nas })
   }
 
+  // ── Ações: Ajuste de Quantidade (Unidades) ──────────────────────────────────
+
+  const adjustQuantity = (mealId: string, itemId: string, dir: 'increase' | 'decrease') => {
+    const nm = meals.map(m => {
+      if (m.id !== mealId) return m
+      return {
+        ...m,
+        items: m.items.map(item => {
+          if (item.id !== itemId || item.unitQty === undefined) return item
+          const newQty = dir === 'increase'
+            ? Math.min(99, item.unitQty + 1)
+            : Math.max(1, item.unitQty - 1)
+          if (newQty === item.unitQty) return item
+          const scale   = newQty / item.unitQty
+          const newKcal = Math.round(item.kcal * scale)
+          const newP    = +((item.p * scale).toFixed(1))
+          const newC    = +((item.c * scale).toFixed(1))
+          const newF    = +((item.f * scale).toFixed(1))
+          // Update "(X un)" count in name
+          let newName = item.name.replace(/\(\d+ un\)/i, `(${newQty} un)`)
+          // Update trailing gram value, e.g. "100g" → "200g"
+          newName = newName.replace(/\b(\d+)g\b/, g2 => `${Math.round(parseInt(g2) * scale)}g`)
+          return { ...item, unitQty: newQty, kcal: newKcal, p: newP, c: newC, f: newF, name: newName }
+        }),
+      }
+    })
+    // Clear any active sub for this item — calorie-match is now stale
+    const nas = { ...activeSubs }
+    delete nas[itemId]
+    setActiveSubs(nas)
+    setMeals(nm)
+    save({ meals: nm, activeSubs: nas })
+  }
+
   // ── Ações: Substituidores ───────────────────────────────────────────────────
 
   const openSubModal = (itemId = '') => {
@@ -900,15 +943,18 @@ export default function Home() {
 
   const addTACOItem = () => {
     if (!tacoSelected) return
-    const g    = parseFloat(tacoPorcao) || 100
-    const mult = g / 100
+    const g        = parseFloat(tacoPorcao) || 100
+    const mult     = g / 100
+    const unitInfo = FOOD_UNITS[tacoSelected.id]
+    const unitQty  = unitInfo ? Math.max(1, Math.round(g / unitInfo.unitWeight)) : undefined
     const item: MealItem = {
       id:   newId(),
-      name: `${tacoSelected.nome} (${Math.round(g)}g)`,
+      name: formatTacoItemName(tacoSelected, Math.round(g)),
       kcal: Math.round(tacoSelected.kcal * mult),
       p:    +(tacoSelected.p * mult).toFixed(1),
       c:    +(tacoSelected.c * mult).toFixed(1),
       f:    +(tacoSelected.f * mult).toFixed(1),
+      ...(unitQty !== undefined ? { unitQty } : {}),
     }
     const nm = meals.map((m, mi) => mi !== tacoMealIdx ? m : { ...m, items: [...m.items, item] })
     setMeals(nm); save({ meals: nm }); setShowTACO(false)
@@ -1136,14 +1182,19 @@ export default function Home() {
     const nm: Meal[] = generatedDiet.map(gm => ({
       id:    gm.mealId,
       title: gm.title,
-      items: gm.items.map(gi => ({
-        id:   newId(),
-        name: formatTacoItemName(gi.food, gi.grams),
-        kcal: gi.kcal,
-        p:    gi.p,
-        c:    gi.c,
-        f:    gi.f,
-      })),
+      items: gm.items.map(gi => {
+        const unitInfo = FOOD_UNITS[gi.food.id]
+        const unitQty  = unitInfo ? Math.max(1, Math.round(gi.grams / unitInfo.unitWeight)) : undefined
+        return {
+          id:   newId(),
+          name: formatTacoItemName(gi.food, gi.grams),
+          kcal: gi.kcal,
+          p:    gi.p,
+          c:    gi.c,
+          f:    gi.f,
+          ...(unitQty !== undefined ? { unitQty } : {}),
+        }
+      }),
     }))
     setMeals(nm)
     save({ meals: nm })
@@ -2132,6 +2183,22 @@ export default function Home() {
                     <div className="alt-wrap" onClick={e => e.stopPropagation()}>
                       <button className="alt-btn" title="Substituir alimento"
                         onClick={() => setTodaySubItem(item)}>🔄</button>
+                      {item.unitQty !== undefined && (
+                        <>
+                          <button
+                            className="qty-btn"
+                            title="Diminuir quantidade"
+                            disabled={item.unitQty <= 1}
+                            onClick={() => adjustQuantity(meal.id, item.id, 'decrease')}
+                          >➖</button>
+                          <button
+                            className="qty-btn"
+                            title="Aumentar quantidade"
+                            disabled={item.unitQty >= 99}
+                            onClick={() => adjustQuantity(meal.id, item.id, 'increase')}
+                          >➕</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )
