@@ -118,7 +118,7 @@ function calcDayMacros(
 ) {
   let cals = 0, p = 0, c = 0, f = 0
   for (const meal of meals) {
-    for (const item of meal.items) {
+    for (const item of (meal.items ?? [])) {
       if (!dayChecked?.[item.id]) continue
       const src = activeSubs[item.id] ?? item
       cals += src.kcal; p += src.p; c += src.c; f += src.f
@@ -217,14 +217,53 @@ export default function Home() {
   // ── applyData ───────────────────────────────────────────────────────────────
 
   const applyData = useCallback((d: any, localPhotos?: Record<string, any>) => {
-    if (Array.isArray(d.meals))   setMeals(d.meals)
-    if (d.alternatives)           setAlternatives({ ...DEFAULT_ALTERNATIVES, ...d.alternatives })
-    if (d.activeSubs)             setActiveSubs(d.activeSubs)
-    if (d.checked)                setChecked(d.checked)
-    if (d.dayStats)               setDayStats(d.dayStats)
-    if (d.userGoals)              setUserGoals(d.userGoals)
+    // ── normalização defensiva ───────────────────────────────────────────────
+    // Firebase omite arrays vazios e pode retornar objetos {0:…,1:…} no lugar
+    // de arrays. Normalizamos tudo antes de setar o estado.
 
-    const wh: Record<string, any> = d.weightHistory || d.weights || {}
+    // meals: garante array e garante que cada meal.items é array
+    const mealsRaw: any[] = Array.isArray(d.meals)
+      ? d.meals
+      : d.meals && typeof d.meals === 'object'
+        ? Object.values(d.meals)
+        : null
+    if (mealsRaw) {
+      const normalizedMeals: Meal[] = mealsRaw.map((m: any) => ({
+        id:    m?.id    || newId(),
+        title: m?.title || '',
+        items: Array.isArray(m?.items)
+          ? m.items
+          : m?.items && typeof m.items === 'object'
+            ? Object.values(m.items)
+            : [],
+      }))
+      setMeals(normalizedMeals)
+    }
+
+    // alternatives: cada valor deve ser array
+    if (d.alternatives && typeof d.alternatives === 'object') {
+      const normAlts: Record<string, SubOption[]> = {}
+      for (const [key, val] of Object.entries(d.alternatives)) {
+        normAlts[key] = Array.isArray(val)
+          ? val as SubOption[]
+          : val && typeof val === 'object'
+            ? Object.values(val as any)
+            : []
+      }
+      setAlternatives({ ...DEFAULT_ALTERNATIVES, ...normAlts })
+    }
+
+    if (d.activeSubs && typeof d.activeSubs === 'object') setActiveSubs(d.activeSubs)
+    if (d.checked    && typeof d.checked    === 'object') setChecked(d.checked)
+    if (d.dayStats   && typeof d.dayStats   === 'object') setDayStats(d.dayStats)
+    if (d.userGoals  && typeof d.userGoals  === 'object') setUserGoals(d.userGoals)
+
+    // weightHistory: sempre objeto {date: entry}
+    const wh: Record<string, any> =
+      d.weightHistory && typeof d.weightHistory === 'object' ? d.weightHistory
+      : d.weights     && typeof d.weights       === 'object' ? d.weights
+      : {}
+
     if (localPhotos) {
       const merged: Record<string, any> = {}
       for (const [date, entry] of Object.entries(wh)) {
@@ -479,7 +518,7 @@ export default function Home() {
   const today        = getToday()
   const todayChecked = checked[today] || {}
   const { cals: totalCals, p: totalP, c: totalC, f: totalF } = calcDayMacros(meals, todayChecked, activeSubs)
-  const mealsCompleted  = meals.filter(m => m.items.length > 0 && m.items.every(it => todayChecked[it.id])).length
+  const mealsCompleted  = meals.filter(m => (m.items ?? []).length > 0 && (m.items ?? []).every(it => todayChecked[it.id])).length
   const todayStat       = dayStats[today]
   const todayFinished   = todayStat?.finalizado || false
   const todayCalTotal   = todayStat?.caloriasTotal ?? totalCals
@@ -562,7 +601,7 @@ export default function Home() {
   const weekBadgeColor = weekDiff < -200 ? 'var(--warning)' : weekDiff > 200 ? '#e53935' : 'var(--success)'
   const weekBadgeText  = weekDiff < 0 ? `${Math.abs(weekDiff)} kcal abaixo` : weekDiff > 0 ? `${weekDiff} kcal acima` : 'Semana no alvo'
 
-  const allItemOptions = meals.flatMap(m => m.items.map(it => ({ id: it.id, label: `${m.title} → ${it.name}` })))
+  const allItemOptions = meals.flatMap(m => (m.items ?? []).map(it => ({ id: it.id, label: `${m.title} → ${it.name}` })))
 
   const firebaseConfigured = isFirebaseConfigured()
 
@@ -834,7 +873,7 @@ export default function Home() {
             </div>
           </div>
 
-          {meals.length === 0 || meals.every(m => m.items.length === 0) ? (
+          {meals.length === 0 || meals.every(m => (m.items ?? []).length === 0) ? (
             <div className="card" style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>🍽️</div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Cardápio vazio</div>
@@ -849,13 +888,13 @@ export default function Home() {
           ) : meals.map(meal => (
             <div key={meal.id} className="card">
               <div className="card-title">
-                {meal.title} · ~{meal.items.reduce((s, it) => s + it.kcal, 0)} kcal
+                {meal.title} · ~{(meal.items ?? []).reduce((s, it) => s + it.kcal, 0)} kcal
               </div>
-              {meal.items.length === 0 ? (
+              {(meal.items ?? []).length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
                   Nenhum alimento — adicione em Config
                 </div>
-              ) : meal.items.map(item => {
+              ) : (meal.items ?? []).map(item => {
                 const subActive = activeSubs[item.id]
                 const display   = subActive || item
                 const alts      = alternatives[item.id] || []
@@ -1253,7 +1292,7 @@ export default function Home() {
               <div className="card-title" style={{ marginBottom:0 }}>Gerenciar Substituidores</div>
               <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openSubModal()}>+ Adicionar</button>
             </div>
-            {meals.map(meal => meal.items.map(item => {
+            {meals.map(meal => (meal.items ?? []).map(item => {
               const alts = alternatives[item.id] || []
               return (
                 <div key={item.id} style={{ marginBottom:16 }}>
@@ -1284,9 +1323,9 @@ export default function Home() {
             {meals.map((meal, mealIdx) => (
               <div key={meal.id} style={{ marginBottom:20 }}>
                 <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)', marginBottom:8 }}>
-                  {meal.title} · ~{meal.items.reduce((s,it)=>s+it.kcal,0)} kcal
+                  {meal.title} · ~{(meal.items ?? []).reduce((s,it)=>s+it.kcal,0)} kcal
                 </div>
-                {meal.items.map(item => (
+                {(meal.items ?? []).map(item => (
                   <div key={item.id} className="config-item-row">
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
