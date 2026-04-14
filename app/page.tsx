@@ -1160,10 +1160,14 @@ export default function Home() {
     closeTodaySubModal()
   }
 
-  const useDietCals = (cals: number, obj: 'emagrecer'|'manter'|'ganhar') => {
+  const useDietCals = (cals: number, _obj: 'emagrecer'|'manter'|'ganhar') => {
     setDietTarget(String(cals))
     setDietBudget(false)
     setGeneratedDiet(null)
+    // Salva a meta calórica escolhida para que CAL_META e o Status do Dia reflitam o déficit/superávit correto
+    const ng = { ...userGoals, cals }
+    setUserGoals(ng)
+    save({ userGoals: ng })
     setActiveTab('gerar-dieta')
   }
 
