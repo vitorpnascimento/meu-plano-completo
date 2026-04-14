@@ -12,56 +12,56 @@ import {
 const MACROS_PER_ITEM = [
   // Café
   { kcal: 146, p: 13,   c: 1,  f: 9.5 },  // Ovo (2 un)
-  { kcal: 135, p: 4,    c: 24, f: 0.8 },  // Pão (2 un)
+  { kcal: 150, p: 4,    c: 29, f: 1.5 },  // Pão francês (1 un / 50g)
   { kcal: 108, p: 8.5,  c: 1,  f: 5.4 },  // Requeijão Light (60g)
   // Almoço
-  { kcal: 330, p: 62,   c: 0,  f: 7.2 },  // Frango (200g)
-  { kcal: 195, p: 4,    c: 42, f: 0.5 },  // Arroz (150g)
+  { kcal: 297, p: 56,   c: 0,  f: 7.2 },  // Frango (180g)
+  { kcal: 169, p: 3.5,  c: 37, f: 0.4 },  // Arroz (130g)
   { kcal: 30,  p: 1,    c: 6,  f: 0.2 },  // Vegetais (100g)
   // Lanche
-  { kcal: 135, p: 4,    c: 24, f: 0.8 },  // Pão (2 un)
+  { kcal: 150, p: 4,    c: 29, f: 1.5 },  // Pão francês (1 un / 50g)
   { kcal: 165, p: 31,   c: 0,  f: 3.6 },  // Frango (100g)
   { kcal: 54,  p: 4.5,  c: 0,  f: 3.3 },  // Requeijão Light (30g)
   // Jantar
-  { kcal: 330, p: 62,   c: 0,  f: 7.2 },  // Frango (200g)
-  { kcal: 195, p: 4,    c: 42, f: 0.5 },  // Arroz (150g)
+  { kcal: 297, p: 56,   c: 0,  f: 7.2 },  // Frango (180g)
+  { kcal: 169, p: 3.5,  c: 37, f: 0.4 },  // Arroz (130g)
   { kcal: 30,  p: 1,    c: 6,  f: 0.2 },  // Vegetais (100g)
   // Ceia
   { kcal: 120, p: 25,   c: 2,  f: 1.0 },  // Whey (30g)
-  { kcal: 78,  p: 3,    c: 13, f: 1.4 },  // Aveia (20g)
+  { kcal: 78,  p: 3.5,  c: 13, f: 1.4 },  // Aveia (20g)
 ]
 
 const MEALS: [string, string[][]][] = [
-  ["Café da Manhã · ~389 kcal", [
+  ["Café da Manhã · ~404 kcal", [
     ["Ovo (2 un)",             "146 kcal · P 13g · C 1g · G 9,5g"],
-    ["Pão francês (2 un)",     "135 kcal · P 4g · C 24g · G 0,8g"],
+    ["Pão francês (1 un)",     "150 kcal · P 4g · C 29g · G 1,5g"],
     ["Requeijão Light (60g)",  "108 kcal · P 8,5g · C 1g · G 5,4g"],
   ]],
-  ["Almoço · ~555 kcal", [
-    ["Frango (200g)",          "330 kcal · P 62g · C 0g · G 7,2g"],
-    ["Arroz (150g)",           "195 kcal · P 4g · C 42g · G 0,5g"],
+  ["Almoço · ~496 kcal", [
+    ["Frango (180g)",          "297 kcal · P 56g · C 0g · G 7,2g"],
+    ["Arroz (130g)",           "169 kcal · P 3,5g · C 37g · G 0,4g"],
     ["Vegetais (100g)",        "30 kcal · P 1g · C 6g · G 0,2g"],
   ]],
-  ["Lanche · ~354 kcal", [
-    ["Pão francês (2 un)",     "135 kcal · P 4g · C 24g · G 0,8g"],
+  ["Lanche · ~369 kcal", [
+    ["Pão francês (1 un)",     "150 kcal · P 4g · C 29g · G 1,5g"],
     ["Frango (100g)",          "165 kcal · P 31g · C 0g · G 3,6g"],
     ["Requeijão Light (30g)",  "54 kcal · P 4,5g · C 0g · G 3,3g"],
   ]],
-  ["Jantar · ~555 kcal", [
-    ["Frango (200g)",          "330 kcal · P 62g · C 0g · G 7,2g"],
-    ["Arroz (150g)",           "195 kcal · P 4g · C 42g · G 0,5g"],
+  ["Jantar · ~496 kcal", [
+    ["Frango (180g)",          "297 kcal · P 56g · C 0g · G 7,2g"],
+    ["Arroz (130g)",           "169 kcal · P 3,5g · C 37g · G 0,4g"],
     ["Vegetais (100g)",        "30 kcal · P 1g · C 6g · G 0,2g"],
   ]],
   ["Ceia · ~198 kcal", [
     ["Whey (30g)",             "120 kcal · P 25g · C 2g · G 1g"],
-    ["Aveia (20g)",            "78 kcal · P 3g · C 13g · G 1,4g"],
+    ["Aveia (20g)",            "78 kcal · P 3,5g · C 13g · G 1,4g"],
   ]],
 ]
 
 const MEAL_GROUPS = [3, 3, 3, 3, 2]
-const MACRO_GOALS = { p: 228, c: 162, f: 41 }
-const CAL_META = 2050
-const CAL_MAX  = 2250
+const MACRO_GOALS = { p: 214, c: 161, f: 43 }
+const CAL_META = 1963
+const CAL_MAX  = 2163
 
 // ─── Helpers (fora do componente, sem estado) ──────────────────────────────────
 
