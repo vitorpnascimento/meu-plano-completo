@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import {
-  BarChart, Bar, LineChart, Line,
+  BarChart, Bar, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts'
@@ -31,6 +31,12 @@ interface SubOption {
   p:    number
   c:    number
   f:    number
+}
+
+interface WeightEntry {
+  peso:      number
+  foto?:     string
+  calorias?: number
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
@@ -122,6 +128,20 @@ function getLastNDates(n: number): string[] {
 
 function newId() { return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
+function rawPeso(entry: any): number | null {
+  if (entry == null) return null
+  const v = typeof entry === 'object' ? entry.peso : entry
+  return typeof v === 'number' && !isNaN(v) ? v : null
+}
+
+function rawFoto(entry: any): string | null {
+  return entry && typeof entry === 'object' ? (entry.foto || null) : null
+}
+
+function rawCalorias(entry: any): number | null {
+  return entry && typeof entry === 'object' ? (entry.calorias || null) : null
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
@@ -152,6 +172,9 @@ export default function Home() {
   const [finObs,         setFinObs]         = useState('')
   const [finExtras,      setFinExtras]      = useState('')
 
+  // Modal: Histórico de Peso
+  const [showWeightHistory, setShowWeightHistory] = useState(false)
+
   // Modal: Editar / Adicionar Item do Cardápio
   const [itemModal, setItemModal] = useState<null|{ mode:'edit'|'add'; mealIdx:number; item?:MealItem }>(null)
   const [itemForm,  setItemForm]  = useState(BLANK_ITEM_FORM)
@@ -175,7 +198,9 @@ export default function Home() {
     if (d.activeSubs)    setActiveSubs(d.activeSubs)
     if (d.checked)       setChecked(d.checked)
     if (d.dayStats)      setDayStats(d.dayStats)
-    if (d.weights)       setWeightsData(d.weights)
+    // suporta chave nova (weightHistory) e antiga (weights)
+    if (d.weightHistory) setWeightsData(d.weightHistory)
+    else if (d.weights)  setWeightsData(d.weights)
     if (d.userGoals)     setUserGoals(d.userGoals)
   }, [])
 
@@ -192,7 +217,7 @@ export default function Home() {
   const save = (overrides: Record<string,any> = {}) => {
     localStorage.setItem('dietAppData', JSON.stringify({
       meals, alternatives, activeSubs, checked, dayStats,
-      weights: weightsData, userGoals, ...overrides,
+      weightHistory: weightsData, userGoals, ...overrides,
     }))
   }
 
@@ -233,9 +258,16 @@ export default function Home() {
   // ── Ações: Peso ────────────────────────────────────────────────────────────
 
   const addWeight = (weight: string, photo = '') => {
-    const entry = photo ? { peso: parseFloat(weight), foto: photo } : parseFloat(weight)
-    const newW = { ...weightsData, [getToday()]: entry }
-    setWeightsData(newW); save({ weights: newW })
+    const today = getToday()
+    const cals = calcDayMacros(meals, checked[today] || {}, activeSubs).cals
+    const entry: WeightEntry = {
+      peso: parseFloat(weight),
+      ...(photo ? { foto: photo } : {}),
+      ...(cals > 0 ? { calorias: cals } : {}),
+    }
+    const newW = { ...weightsData, [today]: entry }
+    setWeightsData(newW)
+    save({ weightHistory: newW })
   }
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -328,6 +360,36 @@ export default function Home() {
   const todayCalTotal  = todayStat?.caloriasTotal ?? totalCals
   const todayFeedback  = getFeedback(todayCalTotal, CAL_META, CAL_MAX)
 
+  // ── Histórico de peso ──────────────────────────────────────────────────────
+
+  const weightHistoryAsc = Object.entries(weightsData as Record<string, any>)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, entry]) => ({
+      date,
+      label:    dateLabel(date),
+      peso:     rawPeso(entry),
+      foto:     rawFoto(entry),
+      calorias: rawCalorias(entry),
+    }))
+    .filter(e => e.peso !== null) as { date:string; label:string; peso:number; foto:string|null; calorias:number|null }[]
+
+  const weightHistoryDesc = [...weightHistoryAsc].reverse()
+
+  const todayWeightEntry = weightsData[today]
+  const todayWeight      = rawPeso(todayWeightEntry)
+  const todayWeightFoto  = rawFoto(todayWeightEntry)
+
+  const firstW    = weightHistoryAsc[0]?.peso ?? null
+  const lastW     = weightHistoryAsc[weightHistoryAsc.length - 1]?.peso ?? null
+  const totalLoss = firstW !== null && lastW !== null ? +((firstW - lastW).toFixed(1)) : null
+
+  const daysBetween = weightHistoryAsc.length > 1
+    ? (new Date(weightHistoryAsc[weightHistoryAsc.length-1].date).getTime() - new Date(weightHistoryAsc[0].date).getTime()) / (1000 * 60 * 60 * 24)
+    : 0
+  const weeklyAvg = daysBetween > 0 && totalLoss !== null
+    ? +((totalLoss / daysBetween) * 7).toFixed(2)
+    : null
+
   // ── Estatísticas ───────────────────────────────────────────────────────────
 
   const weekDates  = getLastNDates(7)
@@ -357,9 +419,31 @@ export default function Home() {
   const weekMeta      = CAL_META * 7
   const weekDiff      = weekTotal - weekMeta
 
-  const getWeightVal  = (e: any) => e ? (typeof e === 'object' ? e.peso : e) : null
-  const weightTrend   = monthDates.map(d => ({ label: dateLabel(d), peso: getWeightVal(weightsData[d]) })).filter(d => d.peso !== null)
-  const weekWeightData = weekDates.map(d => ({ label: dateLabel(d), peso: getWeightVal(weightsData[d]) })).filter(d => d.peso !== null)
+  const weekWeightData = weekDates
+    .map(d => ({ label: dateLabel(d), peso: rawPeso(weightsData[d]) }))
+    .filter(d => d.peso !== null) as { label:string; peso:number }[]
+
+  const weightTrend = monthDates
+    .map(d => ({ label: dateLabel(d), peso: rawPeso(weightsData[d]) }))
+    .filter(d => d.peso !== null) as { label:string; peso:number }[]
+
+  // Gráfico duplo (peso + calorias) para Estatísticas
+  const dualChartData = monthDates
+    .map(d => {
+      const peso = rawPeso(weightsData[d])
+      const cals = calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0)
+      return {
+        label: dateLabel(d),
+        peso:  peso ?? undefined,
+        cals:  cals > 0 ? cals : undefined,
+      }
+    })
+    .filter(d => d.peso !== undefined || d.cals !== undefined)
+
+  // Peso semana: primeiro e último com registro
+  const weekFirstW     = weekWeightData[0]?.peso ?? null
+  const weekLastW      = weekWeightData[weekWeightData.length - 1]?.peso ?? null
+  const weekWeightDiff = weekFirstW !== null && weekLastW !== null ? +((weekLastW - weekFirstW).toFixed(1)) : null
 
   const weekBadgeColor = weekDiff < -200 ? 'var(--warning)' : weekDiff > 200 ? '#e53935' : 'var(--success)'
   const weekBadgeText  = weekDiff < 0 ? `${Math.abs(weekDiff)} kcal abaixo` : weekDiff > 0 ? `${weekDiff} kcal acima` : 'Semana no alvo'
@@ -370,6 +454,104 @@ export default function Home() {
 
   return (
     <div>
+
+      {/* ══ Modal: Histórico de Peso ══ */}
+      {showWeightHistory && (
+        <div className="modal-overlay" onClick={() => setShowWeightHistory(false)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">📊 Histórico de Peso</div>
+
+            {/* Stats rápidas */}
+            <div className="wh-stats-grid">
+              {[
+                { label: 'Peso inicial', val: firstW !== null ? `${firstW}kg` : '—' },
+                { label: 'Peso atual',   val: lastW  !== null ? `${lastW}kg`  : '—' },
+                { label: 'Perda total',  val: totalLoss !== null
+                    ? `${totalLoss > 0 ? '-' : totalLoss < 0 ? '+' : ''}${Math.abs(totalLoss)}kg ${totalLoss > 0 ? '✅' : totalLoss < 0 ? '⚠️' : '='}`
+                    : '—' },
+                { label: 'Dias reg.',    val: String(weightHistoryAsc.length) },
+                { label: 'Média/semana', val: weeklyAvg !== null
+                    ? `${weeklyAvg > 0 ? '-' : weeklyAvg < 0 ? '+' : ''}${Math.abs(weeklyAvg)}kg`
+                    : '—' },
+              ].map(({ label, val }) => (
+                <div key={label} className="wh-stat-box">
+                  <div className="wh-stat-label">{label}</div>
+                  <div className="wh-stat-val">{val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfico evolução */}
+            {weightHistoryAsc.length >= 2 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Evolução do Peso</div>
+                <ResponsiveContainer width="100%" height={140}>
+                  <LineChart data={weightHistoryAsc} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
+                      formatter={(v: any) => [`${v}kg`, 'Peso']}
+                    />
+                    <Line type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Tabela */}
+            {weightHistoryAsc.length > 0 ? (
+              <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+                <table className="wh-table">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Peso</th>
+                      <th>Foto</th>
+                      <th>Diferença</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {weightHistoryDesc.map((e, i) => {
+                      const prev = weightHistoryDesc[i + 1]
+                      const diff = prev ? +((e.peso - prev.peso).toFixed(1)) : null
+                      return (
+                        <tr key={e.date}>
+                          <td>{new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{e.peso}kg</td>
+                          <td>
+                            {e.foto
+                              ? <img src={e.foto} alt="" className="wh-thumb" />
+                              : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
+                            }
+                          </td>
+                          <td style={{
+                            fontWeight: 500, fontSize: 13,
+                            color: diff === null ? 'var(--text-secondary)'
+                              : diff < 0 ? 'var(--success)'
+                              : diff > 0 ? 'var(--warning)'
+                              : 'var(--text-secondary)',
+                          }}>
+                            {diff === null ? '—'
+                              : `${diff > 0 ? '+' : ''}${diff}kg ${diff < 0 ? '✅' : diff > 0 ? '📈' : ''}`}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>
+                Nenhum registro ainda. Registre seu peso na aba Peso!
+              </div>
+            )}
+
+            <button className="btn" onClick={() => setShowWeightHistory(false)}>Fechar</button>
+          </div>
+        </div>
+      )}
 
       {/* ══ Modal: Dia Finalizado ══ */}
       {showFinalize && (
@@ -388,7 +570,7 @@ export default function Home() {
               return (
                 <div className="modal-feedback" style={{ borderColor: fb.color, color: fb.color }}>
                   {fb.badge} {fb.msg}
-                  <div style={{ marginTop:6, fontSize:12, color:'var(--text-secondary)' }}>
+                  <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
                     Refeições: {totalCals} + Extras: {extras} = <strong>{totalCals + extras} kcal</strong>
                   </div>
                 </div>
@@ -473,10 +655,10 @@ export default function Home() {
       <div className="container">
         <div className="tabs">
           {[
-            { id:'hoje',        label:'Hoje'      },
-            { id:'peso',        label:'Peso'      },
-            { id:'estatísticas',label:'📊 Stats'  },
-            { id:'config',      label:'⚙️ Config' },
+            { id:'hoje',         label:'Hoje'      },
+            { id:'peso',         label:'Peso'      },
+            { id:'estatísticas', label:'📊 Stats'  },
+            { id:'config',       label:'⚙️ Config' },
           ].map(t => (
             <button key={t.id} className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
               onClick={() => setActiveTab(t.id)}>{t.label}</button>
@@ -499,7 +681,7 @@ export default function Home() {
 
           {todayFinished ? (
             <div className="day-finalized-card">
-              <div style={{ fontSize:28 }}>✅</div>
+              <div style={{ fontSize: 28 }}>✅</div>
               <div>
                 <div className="day-finalized-title">Dia Finalizado às {todayStat.timestamp}</div>
                 <div className="day-finalized-feedback" style={{ color: todayFeedback.color }}>{todayFeedback.msg}</div>
@@ -574,7 +756,7 @@ export default function Home() {
                             {alts.filter(a => a.id !== subActive?.id).map(alt => (
                               <div key={alt.id} className="alt-option" onClick={() => chooseSub(item.id, alt)}>
                                 <div>{alt.name}</div>
-                                <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(alt)}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{macroDesc(alt)}</div>
                               </div>
                             ))}
                           </div>
@@ -590,8 +772,38 @@ export default function Home() {
 
         {/* ══════════════════════════════════════════════════════ PESO */}
         <div className={`tab-content ${activeTab === 'peso' ? 'active' : ''}`}>
+
+          {/* Peso de hoje em destaque */}
+          {todayWeight !== null ? (
+            <div className="card today-weight-card">
+              <div className="today-weight-date">
+                {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+              </div>
+              <div className="today-weight-value">{todayWeight}</div>
+              <div className="today-weight-unit">kg</div>
+              {todayWeightFoto && (
+                <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" />
+              )}
+              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
+                onClick={() => setShowWeightHistory(true)}>
+                📊 Ver Histórico Completo
+              </button>
+            </div>
+          ) : weightHistoryAsc.length > 0 ? (
+            <div className="card" style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Último registro: {weightHistoryDesc[0]?.peso}kg em {new Date(weightHistoryDesc[0]?.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+              </div>
+              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
+                onClick={() => setShowWeightHistory(true)}>
+                📊 Ver Histórico ({weightHistoryAsc.length} registros)
+              </button>
+            </div>
+          ) : null}
+
+          {/* Formulário de registro */}
           <div className="card">
-            <div className="card-title">Registrar Peso</div>
+            <div className="card-title">{todayWeight !== null ? 'Atualizar Peso de Hoje' : 'Registrar Peso'}</div>
             <input type="number" placeholder="Seu peso em kg" step="0.1" id="weight-input" />
             <label className="photo-upload-label">
               {weightPhoto ? '✓ Foto selecionada' : '📷 Adicionar foto (opcional)'}
@@ -604,29 +816,103 @@ export default function Home() {
               </div>
             )}
             <button className="btn" onClick={() => {
-              const w = (document.getElementById('weight-input') as HTMLInputElement).value
-              if (w) { addWeight(w, weightPhoto); (document.getElementById('weight-input') as HTMLInputElement).value = ''; setWeightPhoto('') }
+              const inp = document.getElementById('weight-input') as HTMLInputElement
+              if (inp.value) { addWeight(inp.value, weightPhoto); inp.value = ''; setWeightPhoto('') }
             }}>Registrar</button>
-          </div>
-          <div className="card">
-            <div className="card-title">Histórico</div>
-            {Object.entries(weightsData).sort((a,b) => b[0].localeCompare(a[0])).map(([date, entry]: any) => {
-              const peso = getWeightVal(entry); const foto = typeof entry === 'object' ? entry.foto : null
-              return (
-                <div key={date} className="weight-history-item">
-                  <div className="weight-history-info">
-                    <div style={{ fontSize:18, fontWeight:600, color:'var(--primary)' }}>{peso}kg</div>
-                    <div style={{ fontSize:12, color:'var(--text-secondary)' }}>{new Date(date+'T12:00:00').toLocaleDateString('pt-BR')}</div>
-                  </div>
-                  {foto && <img src={foto} alt="" className="weight-history-photo" />}
-                </div>
-              )
-            })}
           </div>
         </div>
 
         {/* ══════════════════════════════════════════════════════ ESTATÍSTICAS */}
         <div className={`tab-content ${activeTab === 'estatísticas' ? 'active' : ''}`}>
+
+          {/* ── Seu Progresso (sempre visível, acima das sub-tabs) ── */}
+          {(weightHistoryAsc.length >= 1 || dualChartData.some(d => d.cals !== undefined)) && (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div className="card-title" style={{ marginBottom: 0 }}>📈 Seu Progresso</div>
+                {weightHistoryAsc.length > 0 && (
+                  <button className="btn btn-small" style={{ width: 'auto' }}
+                    onClick={() => setShowWeightHistory(true)}>
+                    Ver Histórico
+                  </button>
+                )}
+              </div>
+
+              {/* Gráfico duplo peso + calorias */}
+              {dualChartData.length >= 2 ? (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--primary)' }}>●</span> Peso (kg) &nbsp;
+                    <span style={{ color: 'var(--success)' }}>●</span> Calorias
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <ComposedChart data={dualChartData} margin={{ top: 8, right: 50, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                      <YAxis yAxisId="peso" orientation="left"  domain={['auto', 'auto']} tick={{ fill: 'var(--primary)', fontSize: 10 }} />
+                      <YAxis yAxisId="cals" orientation="right" domain={[0, 'auto']}      tick={{ fill: 'var(--success)', fontSize: 10 }} />
+                      <Tooltip
+                        contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
+                        formatter={(v: any, name: string) => name === 'peso' ? [`${v}kg`, 'Peso'] : [`${v}kcal`, 'Calorias']}
+                      />
+                      <Line yAxisId="peso" type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2}
+                        dot={{ fill: 'var(--primary)', r: 3 }} name="peso" connectNulls />
+                      <Line yAxisId="cals" type="monotone" dataKey="cals" stroke="var(--success)" strokeWidth={2}
+                        dot={{ fill: 'var(--success)', r: 3 }} name="cals" connectNulls />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, textAlign: 'center', padding: '16px 0' }}>
+                  Registre peso em pelo menos 2 dias para ver o gráfico de progresso.
+                </div>
+              )}
+
+              {/* Insights automáticos */}
+              <div>
+                {totalLoss !== null && totalLoss > 0 && (
+                  <div className="insight-item">
+                    🏆 Você perdeu <strong>{totalLoss}kg</strong> desde o início ({weightHistoryAsc.length} registros)
+                  </div>
+                )}
+                {totalLoss !== null && totalLoss < 0 && (
+                  <div className="insight-item">
+                    📈 Ganhou <strong>{Math.abs(totalLoss)}kg</strong> desde o início — ajuste a dieta se necessário
+                  </div>
+                )}
+                {weeklyAvg !== null && weeklyAvg > 0 && (
+                  <div className="insight-item">
+                    📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong> {weeklyAvg >= 0.3 && weeklyAvg <= 1 ? '✅ bom ritmo!' : weeklyAvg > 1 ? '⚠️ ritmo muito alto' : ''}
+                  </div>
+                )}
+                {weeklyAvg !== null && weeklyAvg <= 0 && (
+                  <div className="insight-item">
+                    📊 Tendência: <strong>estável</strong> — continue consistente
+                  </div>
+                )}
+                {(() => {
+                  const lastEntry = weightHistoryAsc[weightHistoryAsc.length - 1]
+                  if (!lastEntry?.calorias) return null
+                  const diff = CAL_META - lastEntry.calorias
+                  return (
+                    <div className="insight-item">
+                      {diff > 100
+                        ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer um pouco mais`
+                        : diff < -100
+                        ? `🔴 Calorias: ${Math.abs(diff)} kcal acima da meta no último registro`
+                        : `🟢 Calorias dentro da meta no último registro`}
+                    </div>
+                  )
+                })()}
+                {weightHistoryAsc.length === 0 && (
+                  <div className="insight-item" style={{ color: 'var(--text-secondary)' }}>
+                    Registre seu peso na aba Peso para ver insights de progresso aqui.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="sub-tabs">
             {(['diario','semanal','mensal'] as const).map(st => (
               <button key={st} className={`sub-tab-btn ${statsSubTab === st ? 'active' : ''}`}
@@ -685,6 +971,22 @@ export default function Home() {
 
           {statsSubTab === 'semanal' && (
             <div>
+              {/* Badge de peso semanal */}
+              {weekWeightDiff !== null && weekFirstW !== null && weekLastW !== null && (
+                <div className="weight-badge-card">
+                  <span style={{ fontSize: 18 }}>{weekWeightDiff < 0 ? '📉' : weekWeightDiff > 0 ? '📈' : '➡️'}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>
+                      Peso: {weekFirstW}kg → {weekLastW}kg
+                      <span style={{ color: weekWeightDiff < 0 ? 'var(--success)' : weekWeightDiff > 0 ? 'var(--warning)' : 'var(--text-secondary)', marginLeft: 6 }}>
+                        ({weekWeightDiff > 0 ? '+' : ''}{weekWeightDiff}kg)
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>evolução na semana</div>
+                  </div>
+                </div>
+              )}
+
               <div className="card">
                 <div className="card-title">Calorias — 7 Dias</div>
                 <ResponsiveContainer width="100%" height={200}>
@@ -700,7 +1002,10 @@ export default function Home() {
               </div>
               {weekWeightData.length >= 2 && (
                 <div className="card">
-                  <div className="card-title">Peso — 7 Dias</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                    <div className="card-title" style={{ marginBottom:0 }}>Peso — 7 Dias</div>
+                    <button className="config-reset-btn" onClick={() => setShowWeightHistory(true)}>Ver completo</button>
+                  </div>
                   <ResponsiveContainer width="100%" height={160}>
                     <LineChart data={weekWeightData} margin={{ top:8, right:8, left:-20, bottom:0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -759,7 +1064,10 @@ export default function Home() {
               </div>
               {weightTrend.length >= 2 && (
                 <div className="card">
-                  <div className="card-title">Tendência de Peso — 30 Dias</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                    <div className="card-title" style={{ marginBottom:0 }}>Tendência de Peso — 30 Dias</div>
+                    <button className="config-reset-btn" onClick={() => setShowWeightHistory(true)}>Ver completo</button>
+                  </div>
                   <ResponsiveContainer width="100%" height={180}>
                     <LineChart data={weightTrend} margin={{ top:8, right:8, left:-20, bottom:0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
