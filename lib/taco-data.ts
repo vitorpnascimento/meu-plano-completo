@@ -371,6 +371,76 @@ export function generateDiet(targetCals: number, preferBudget: boolean): Generat
   })
 }
 
+// ─── Unidades de Medida ────────────────────────────────────────────────────────
+
+/** Mapa de unidades para alimentos que têm medida natural (unidades, fatias, etc.) */
+export const FOOD_UNITS: Record<number, { unit: string; unitWeight: number }> = {
+  // Ovos
+  19: { unit: 'un',    unitWeight: 50  },
+  20: { unit: 'un',    unitWeight: 50  },
+  21: { unit: 'un',    unitWeight: 50  },
+  22: { unit: 'un',    unitWeight: 30  },  // clara
+  // Pães
+  25: { unit: 'un',    unitWeight: 50  },  // Pão francês
+  26: { unit: 'fatia', unitWeight: 25  },  // Pão integral
+  113:{ unit: 'fatia', unitWeight: 25  },  // Pão de forma integral
+  33: { unit: 'un',    unitWeight: 30  },  // Pão de queijo
+  // Frutas
+  58: { unit: 'un',    unitWeight: 100 },  // Banana prata
+  59: { unit: 'un',    unitWeight: 80  },  // Banana nanica
+  60: { unit: 'un',    unitWeight: 130 },  // Maçã fuji
+  61: { unit: 'un',    unitWeight: 150 },  // Laranja
+  62: { unit: 'un',    unitWeight: 300 },  // Mamão (meia unidade grande)
+  63: { unit: 'un',    unitWeight: 12  },  // Morango
+  64: { unit: 'fatia', unitWeight: 80  },  // Abacaxi
+  67: { unit: 'un',    unitWeight: 250 },  // Manga
+  68: { unit: 'un',    unitWeight: 60  },  // Uva (cacho pequeno)
+  69: { unit: 'un',    unitWeight: 80  },  // Kiwi
+  70: { unit: 'un',    unitWeight: 150 },  // Pera
+  71: { unit: 'un',    unitWeight: 200 },  // Abacate (metade)
+}
+
+/** Formata o nome de um alimento TACO com sua unidade de medida natural,
+ *  ou em gramas quando não há unidade específica. */
+export function formatTacoItemName(food: TacoFood, grams: number): string {
+  const unitInfo = FOOD_UNITS[food.id]
+  if (unitInfo && unitInfo.unitWeight > 0) {
+    const qty = Math.max(1, Math.round(grams / unitInfo.unitWeight))
+    return `${food.nome} (${qty} ${unitInfo.unit})`
+  }
+  return `${food.nome} (${grams}g)`
+}
+
+/** Encontra alternativas do banco TACO para um item da aba Hoje.
+ *  Retorna alimentos com porção ajustada para ~targetKcal. */
+export function getTodaySubstitutes(
+  targetKcal: number,
+  itemName:   string,
+): { food: TacoFood; grams: number; kcal: number; p: number; c: number; f: number }[] {
+  const matched = fuzzyMatchTACO(itemName)
+  const candidates = TACO.filter(f =>
+    f.kcal > 0 &&
+    f.id !== (matched?.id ?? -999) &&
+    (matched ? f.cat === matched.cat : true)
+  )
+  return candidates
+    .map(f => {
+      const rawG = (targetKcal / f.kcal) * 100
+      const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+      const m    = g / 100
+      return {
+        food: f,
+        grams: g,
+        kcal:  Math.round(f.kcal * m),
+        p:     +(f.p * m).toFixed(1),
+        c:     +(f.c * m).toFixed(1),
+        f:     +(f.f * m).toFixed(1),
+      }
+    })
+    .sort((a, b) => Math.abs(a.kcal - targetKcal) - Math.abs(b.kcal - targetKcal))
+    .slice(0, 8)
+}
+
 /** Busca substitutos para um item gerado: mesma categoria, calorias similares. */
 export function getSubstitutes(food: TacoFood, grams: number, preferBudget: boolean): TacoFood[] {
   const targetKcal = (food.kcal * grams) / 100

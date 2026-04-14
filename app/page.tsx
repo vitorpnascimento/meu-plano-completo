@@ -17,7 +17,8 @@ import {
 import LoginScreen from './components/LoginScreen'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
-  BUDGET_IDS,
+  getTodaySubstitutes, formatTacoItemName,
+  BUDGET_IDS, FOOD_UNITS,
   type TacoFood, type GeneratedItem, type GeneratedMeal,
 } from '../lib/taco-data'
 
@@ -423,6 +424,25 @@ async function extractTextFromPDF(file: File): Promise<string> {
   return parts.join('\n')
 }
 
+// ─── Bioimpedância: parser de texto ────────────────────────────────────────────
+
+interface BioData {
+  peso?:    string
+  gordura?: string  // % gordura corporal
+  altura?:  string
+  idade?:   string
+}
+
+function parseBioText(text: string): BioData {
+  const r: BioData = {}
+  const tryNum = (m: RegExpMatchArray | null) => m?.[1]?.replace(',', '.') ?? undefined
+  r.peso    = tryNum(text.match(/(?:peso|weight)[:\s]+([0-9]+[.,][0-9]+|[0-9]+)\s*(?:kg)?/i))
+  r.gordura = tryNum(text.match(/(?:gordura|fat|body\s*fat)[:\s%]+([0-9]+[.,][0-9]+|[0-9]+)\s*%?/i))
+  r.altura  = tryNum(text.match(/(?:altura|height)[:\s]+([0-9]+(?:[.,][0-9]+)?)\s*(?:cm)?/i))
+  r.idade   = tryNum(text.match(/(?:idade|age)[:\s]+([0-9]+)/i))
+  return r
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
@@ -502,6 +522,10 @@ export default function Home() {
   const [calcAtividade, setCalcAtividade] = useState<'sed'|'leve'|'mod'|'int'|'muito'>('mod')
   const [calcObjetivo,  setCalcObjetivo]  = useState<'emagrecer'|'manter'|'ganhar'>('emagrecer')
   const [calcResult,    setCalcResult]    = useState<CalcResult | null>(null)
+  const [calcGordura,   setCalcGordura]   = useState('')   // % gordura para Katch-McArdle
+  const [calcDeficit,   setCalcDeficit]   = useState<'leve'|'mod'|'agr'|null>(null)
+  const [showBio,       setShowBio]       = useState(false)
+  const bioFileRef = useRef<HTMLInputElement>(null)
 
   // ── Gerar Dieta ───────────────────────────────────────────────────────────────
   const [dietTarget,    setDietTarget]    = useState('')
@@ -509,6 +533,9 @@ export default function Home() {
   const [generatedDiet, setGeneratedDiet] = useState<GeneratedMeal[] | null>(null)
   const [dietSubModal,  setDietSubModal]  = useState<{mealIdx:number; itemIdx:number} | null>(null)
   const [dietSubs,      setDietSubs]      = useState<TacoFood[]>([])
+
+  // ── Substituidores Hoje ───────────────────────────────────────────────────────
+  const [todaySubItem,  setTodaySubItem]  = useState<MealItem | null>(null)
 
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
@@ -942,9 +969,18 @@ export default function Home() {
     const idade  = parseFloat(calcIdade)
     if (!peso || !altura || !idade) return
 
-    const tmb = calcSexo === 'M'
-      ? 88.362 + (13.397 * peso) + (4.799 * altura) - (5.677 * idade)
-      : 447.593 + (9.247 * peso) + (3.098 * altura) - (4.330 * idade)
+    let tmb: number
+    const gordPct = parseFloat(calcGordura)
+    if (gordPct > 0 && gordPct < 100) {
+      // Katch-McArdle: mais preciso quando % gordura é conhecida
+      const lbm = peso * (1 - gordPct / 100)
+      tmb = 370 + (21.6 * lbm)
+    } else {
+      // Harris-Benedict revisada
+      tmb = calcSexo === 'M'
+        ? 88.362 + (13.397 * peso) + (4.799 * altura) - (5.677 * idade)
+        : 447.593 + (9.247 * peso) + (3.098 * altura) - (4.330 * idade)
+    }
 
     const FACTORS: Record<string, number> = { sed:1.2, leve:1.375, mod:1.55, int:1.725, muito:1.9 }
     const tdee = tmb * FACTORS[calcAtividade]
@@ -953,6 +989,7 @@ export default function Home() {
     const imcClass = imc < 18.5 ? 'Abaixo do peso' : imc < 25 ? 'Peso normal' : imc < 30 ? 'Sobrepeso' : 'Obeso'
     const imcColor = imc < 18.5 ? 'var(--warning)' : imc < 25 ? 'var(--success)' : imc < 30 ? 'var(--warning)' : '#e53935'
 
+    setCalcDeficit(null)
     setCalcResult({
       imc: +imc.toFixed(1), imcClass, imcColor,
       tmb:       Math.round(tmb),
@@ -961,6 +998,14 @@ export default function Home() {
       emagrecer: Math.round(tdee - 500),
       ganhar:    Math.round(tdee + 500),
     })
+  }
+
+  const applyBioFile = (text: string) => {
+    const bio = parseBioText(text)
+    if (bio.peso)    setCalcPeso(bio.peso)
+    if (bio.gordura) setCalcGordura(bio.gordura)
+    if (bio.altura)  setCalcAltura(bio.altura)
+    if (bio.idade)   setCalcIdade(bio.idade)
   }
 
   const useDietCals = (cals: number, obj: 'emagrecer'|'manter'|'ganhar') => {
@@ -1016,7 +1061,7 @@ export default function Home() {
       title: gm.title,
       items: gm.items.map(gi => ({
         id:   newId(),
-        name: `${gi.food.nome} (${gi.grams}g)`,
+        name: formatTacoItemName(gi.food, gi.grams),
         kcal: gi.kcal,
         p:    gi.p,
         c:    gi.c,
@@ -1140,6 +1185,89 @@ export default function Home() {
 
   return (
     <div>
+
+      {/* ══ Modal: Substituir Alimento Hoje ══ */}
+      {todaySubItem && (() => {
+        const display   = activeSubs[todaySubItem.id] ?? todaySubItem
+        const userAlts  = alternatives[todaySubItem.id] || []
+        const tacoAlts  = getTodaySubstitutes(display.kcal, todaySubItem.name)
+        return (
+          <div className="modal-overlay" onClick={() => setTodaySubItem(null)}>
+            <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+              <div className="modal-title">🔄 Substituir Alimento</div>
+              <div className="diet-sub-original">
+                <strong>{display.name}</strong>
+                {display !== todaySubItem && <span style={{ color:'var(--text-secondary)', fontSize:12 }}> (sub ativa)</span>}
+                <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:3 }}>
+                  ~{display.kcal} kcal · P{display.p}g · C{display.c}g · G{display.f}g
+                </div>
+              </div>
+
+              {/* Restores original if sub is active */}
+              {activeSubs[todaySubItem.id] && (
+                <button className="taco-result-item" style={{ width:'100%' }}
+                  onClick={() => { chooseSub(todaySubItem.id, null); setTodaySubItem(null) }}>
+                  <div className="taco-result-name">↩ {todaySubItem.name} <span style={{ color:'var(--text-secondary)', fontWeight:400 }}>(original)</span></div>
+                  <div className="taco-result-cat">{macroDesc(todaySubItem)}</div>
+                </button>
+              )}
+
+              {/* User-defined alternatives */}
+              {userAlts.filter(a => a.id !== activeSubs[todaySubItem.id]?.id).length > 0 && (
+                <>
+                  <div className="sub-section-label">Configurados por você</div>
+                  {userAlts.filter(a => a.id !== activeSubs[todaySubItem.id]?.id).map(alt => (
+                    <button key={alt.id} className="taco-result-item" style={{ width:'100%' }}
+                      onClick={() => { chooseSub(todaySubItem.id, alt); setTodaySubItem(null) }}>
+                      <div className="taco-result-name">{alt.name}</div>
+                      <div className="taco-result-cat">{macroDesc(alt)}</div>
+                    </button>
+                  ))}
+                </>
+              )}
+
+              {/* TACO-based alternatives */}
+              {tacoAlts.length > 0 && (
+                <>
+                  <div className="sub-section-label">Do banco TACO</div>
+                  <div className="taco-results">
+                    {tacoAlts.map(alt => (
+                      <button key={alt.food.id} className="taco-result-item"
+                        onClick={() => {
+                          const sub: SubOption = {
+                            id:   newId(),
+                            name: formatTacoItemName(alt.food, alt.grams),
+                            kcal: alt.kcal, p: alt.p, c: alt.c, f: alt.f,
+                          }
+                          chooseSub(todaySubItem.id, sub)
+                          setTodaySubItem(null)
+                        }}>
+                        <div className="taco-result-name">
+                          {formatTacoItemName(alt.food, alt.grams)}
+                          {BUDGET_IDS.has(alt.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                        </div>
+                        <div className="taco-result-cat">
+                          {alt.kcal} kcal · P{alt.p}g · C{alt.c}g · G{alt.f}g · {alt.food.cat}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {userAlts.length === 0 && tacoAlts.length === 0 && !activeSubs[todaySubItem.id] && (
+                <div style={{ color:'var(--text-secondary)', fontSize:13, padding:'12px 0' }}>
+                  Nenhuma alternativa encontrada. Adicione substitutos em Config → Meu Cardápio.
+                </div>
+              )}
+
+              <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setTodaySubItem(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ══ Modal: Substituto de Dieta Gerada ══ */}
       {dietSubModal !== null && generatedDiet && (() => {
@@ -1881,26 +2009,10 @@ export default function Home() {
                         <div className="meal-desc">{macroDesc(display)}</div>
                       </div>
                     </div>
-                    {(alts.length > 0 || subActive) && (
-                      <div className="alt-wrap" onClick={e => e.stopPropagation()}>
-                        <button className="alt-btn" onClick={() => setOpenAlt(isOpen ? null : item.id)}>🔄</button>
-                        {isOpen && (
-                          <div className="alt-dropdown">
-                            {subActive && (
-                              <div className="alt-option alt-original" onClick={() => chooseSub(item.id, null)}>
-                                ↩ {item.name} (original)
-                              </div>
-                            )}
-                            {alts.filter(a => a.id !== subActive?.id).map(alt => (
-                              <div key={alt.id} className="alt-option" onClick={() => chooseSub(item.id, alt)}>
-                                <div>{alt.name}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{macroDesc(alt)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div className="alt-wrap" onClick={e => e.stopPropagation()}>
+                      <button className="alt-btn" title="Substituir alimento"
+                        onClick={() => setTodaySubItem(item)}>🔄</button>
+                    </div>
                   </div>
                 )
               })}
@@ -1960,12 +2072,47 @@ export default function Home() {
         <div className={`tab-content ${activeTab === 'calculadora' ? 'active' : ''}`}>
           <div className="card">
             <div className="card-title">🧮 Calculadora de Déficit Calórico</div>
-            <div className="calc-grid">
-              {[
-                { label:'Peso', unit:'kg',   val:calcPeso,   set:setCalcPeso   },
-                { label:'Altura', unit:'cm', val:calcAltura, set:setCalcAltura },
-                { label:'Idade', unit:'anos',val:calcIdade,  set:setCalcIdade  },
-              ].map(({ label, unit, val, set }) => (
+
+            {/* ── Bioimpedância (opcional) ── */}
+            <div className="bio-section">
+              <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
+                📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
+              </button>
+              {showBio && (
+                <div className="bio-content">
+                  <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
+                    <div className="bio-upload-icon">📊</div>
+                    <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
+                    <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
+                  </div>
+                  <input ref={bioFileRef} type="file" accept=".txt,.csv,.text"
+                    style={{ display:'none' }}
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f) f.text().then(applyBioFile)
+                    }} />
+                  <div className="calc-field" style={{ marginTop:10 }}>
+                    <label className="calc-label">% Gordura Corporal <span className="calc-unit">(se conhecido)</span></label>
+                    <input type="number" className="login-input" value={calcGordura}
+                      placeholder="Ex: 22.5"
+                      onChange={e => setCalcGordura(e.target.value)} />
+                  </div>
+                  {calcGordura && (
+                    <div className="bio-formula-note">
+                      ✅ Usando Katch-McArdle (mais preciso com % gordura)
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Dados principais ── */}
+            <div className="calc-grid" style={{ marginTop:12 }}>
+              {([
+                { label:'Peso', unit:'kg',    val:calcPeso,   set:setCalcPeso   },
+                { label:'Altura', unit:'cm',  val:calcAltura, set:setCalcAltura },
+                { label:'Idade', unit:'anos', val:calcIdade,  set:setCalcIdade  },
+              ] as { label:string; unit:string; val:string; set:(v:string)=>void }[]).map(({ label, unit, val, set }) => (
                 <div key={label} className="calc-field">
                   <label className="calc-label">{label} <span className="calc-unit">({unit})</span></label>
                   <input type="number" className="login-input" value={val}
@@ -1994,7 +2141,7 @@ export default function Home() {
             </div>
 
             <div className="calc-field" style={{ marginTop:10 }}>
-              <label className="calc-label">Objetivo</label>
+              <label className="calc-label">Objetivo Principal</label>
               <div className="calc-obj-row">
                 {([
                   { v:'emagrecer', label:'📉 Emagrecer' },
@@ -2021,7 +2168,7 @@ export default function Home() {
                   IMC: <strong>{calcResult.imc}</strong> — {calcResult.imcClass}
                 </div>
                 <div className="calc-result-row">
-                  <span>Taxa Metabólica Basal (TMB)</span>
+                  <span>Taxa Metabólica Basal (TMB){calcGordura ? ' · Katch-McArdle' : ''}</span>
                   <span><strong>{calcResult.tmb.toLocaleString('pt-BR')}</strong> kcal/dia</span>
                 </div>
                 <div className="calc-result-row">
@@ -2029,6 +2176,7 @@ export default function Home() {
                   <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
                 </div>
 
+                {/* Cartões Emagrecer / Manter / Ganhar */}
                 <div className="calc-options-grid">
                   {([
                     { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/semana' },
@@ -2040,12 +2188,37 @@ export default function Home() {
                       <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
                       <div className="calc-option-desc">{desc}</div>
                       <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
-                        onClick={() => useDietCals(val, obj)}>
+                        onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>
                         Usar →
                       </button>
                     </div>
                   ))}
                 </div>
+
+                {/* Seletor de Déficit (para Emagrecer) */}
+                {calcObjetivo === 'emagrecer' && (
+                  <div className="deficit-section">
+                    <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
+                    <div className="deficit-row">
+                      {([
+                        { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
+                        { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
+                        { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
+                      ] as const).map(({ id, label, pct, desc }) => {
+                        const cals = Math.round(calcResult.tdee * (1 - pct / 100))
+                        return (
+                          <button key={id}
+                            className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
+                            onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
+                            <div className="deficit-btn-label">{label} −{pct}%</div>
+                            <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
+                            <div className="deficit-btn-desc">{desc}</div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
