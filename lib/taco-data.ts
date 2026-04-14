@@ -336,11 +336,38 @@ const BUDGET_TEMPLATES: typeof STD_TEMPLATES = [
   ]},
 ]
 
+/** Limite máximo de unidades por refeição para alimentos com porção natural.
+ *  Evita resultados absurdos como "32 morangos" na geração automática de dieta. */
+const FOOD_MAX_UNITS: Partial<Record<number, number>> = {
+  63: 5,   // Morango      (~12g/un)
+  64: 3,   // Abacaxi fatia (~80g)
+  68: 2,   // Uva cacho    (~60g)
+  58: 3,   // Banana prata (~100g)
+  59: 3,   // Banana nanica(~100g)
+  60: 2,   // Maçã         (~130g)
+  61: 2,   // Laranja      (~150g)
+  62: 1,   // Mamão        (~300g)
+  67: 1,   // Manga        (~250g)
+  70: 2,   // Pera         (~150g)
+  25: 4,   // Pão francês  (~50g)
+  26: 6,   // Pão integral  (~25g/fatia)
+  113:6,   // Pão de forma  (~25g/fatia)
+}
+
 function buildItem(food: TacoFood, targetKcal: number, share: number): GeneratedItem {
   const slotKcal = targetKcal * share
   const rawGrams = food.kcal > 0 ? (slotKcal / food.kcal) * 100 : 50
-  const grams    = Math.max(10, Math.min(600, Math.round(rawGrams / 5) * 5))
-  const mult     = grams / 100
+  let   grams    = Math.max(10, Math.min(600, Math.round(rawGrams / 5) * 5))
+
+  // Cap grams so the resulting unit count stays within FOOD_MAX_UNITS
+  const unitInfo = FOOD_UNITS[food.id]
+  const maxUnits = FOOD_MAX_UNITS[food.id]
+  if (unitInfo && maxUnits !== undefined) {
+    const maxGrams = maxUnits * unitInfo.unitWeight
+    if (grams > maxGrams) grams = Math.max(10, maxGrams)
+  }
+
+  const mult = grams / 100
   return {
     food,
     grams,

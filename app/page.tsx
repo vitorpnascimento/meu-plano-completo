@@ -2104,12 +2104,12 @@ export default function Home() {
       <div className="container">
         <div className="tabs">
           {[
-            { id:'hoje',         label:'Hoje'      },
-            { id:'peso',         label:'Peso'      },
-            { id:'calculadora',  label:'🧮 Calc'   },
-            { id:'gerar-dieta',  label:'🍽️ Dieta' },
-            { id:'estatísticas', label:'📊 Stats'  },
-            { id:'config',       label:'⚙️ Config' },
+            { id:'hoje',         label:'📋 Cardápio' },
+            { id:'peso',         label:'Peso'         },
+            { id:'calculadora',  label:'🧮 Calc'      },
+            { id:'gerar-dieta',  label:'🍽️ Dieta'   },
+            { id:'estatísticas', label:'📊 Stats'     },
+            { id:'config',       label:'⚙️ Config'   },
           ].map(t => (
             <button key={t.id} className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
               onClick={() => setActiveTab(t.id)}>{t.label}</button>
@@ -2119,16 +2119,30 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ HOJE */}
         <div className={`tab-content ${activeTab === 'hoje' ? 'active' : ''}`}>
 
-          <div className="week-status-card" style={{ borderColor: weekBadgeColor }}
-            onClick={() => { setActiveTab('estatísticas'); setStatsSubTab('semanal') }}>
-            <div className="week-status-left">
-              <div className="week-status-title">📊 Status da semana</div>
-              <div className="week-status-text" style={{ color: weekBadgeColor }}>
-                {weekDiff < -200 ? '🟡' : weekDiff > 200 ? '🔴' : '🟢'} {weekBadgeText}
+          {(() => {
+            const diff  = totalCals - CAL_META
+            const color = diff < -200 ? 'var(--warning)' : diff > 200 ? '#e53935' : 'var(--success)'
+            const emoji = diff < -200 ? '🟡' : diff > 200 ? '🔴' : '🟢'
+            const text  = diff < 0
+              ? `Margem: -${Math.abs(diff)} kcal`
+              : diff > 0 ? `+${diff} kcal acima da meta`
+              : 'No alvo! 🎯'
+            const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
+            return (
+              <div className="week-status-card" style={{ borderColor: color }}
+                onClick={() => { setActiveTab('estatísticas'); setStatsSubTab('diario') }}>
+                <div className="week-status-left">
+                  <div className="week-status-title">📊 Status do Dia</div>
+                  <div className="week-status-text" style={{ color }}>
+                    {emoji} {text}
+                  </div>
+                  <div className="week-status-sub">
+                    {mealsCompleted}/{meals.length} refeições concluídas · {dateStr}
+                  </div>
+                </div>
               </div>
-              <div className="week-status-sub">{weekFin}/7 dias finalizados · clique pra ver detalhes</div>
-            </div>
-          </div>
+            )
+          })()}
 
           {todayFinished ? (
             <div className="day-finalized-card">
@@ -2290,7 +2304,7 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ CALCULADORA */}
         <div className={`tab-content ${activeTab === 'calculadora' ? 'active' : ''}`}>
           <div className="card">
-            <div className="card-title">🧮 Calculadora de Déficit Calórico</div>
+            <div className="card-title">🧮 Calculadora de Nutrição</div>
 
             {/* ── Bioimpedância (opcional) ── */}
             <div className="bio-section">
