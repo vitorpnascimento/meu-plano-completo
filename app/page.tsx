@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { User } from 'firebase/auth'
 import {
   BarChart, Bar, LineChart, Line, ComposedChart,
@@ -15,6 +15,7 @@ import {
   loadUserData,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
+import { searchTACO, fuzzyMatchTACO, type TacoFood } from '../lib/taco-data'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -293,6 +294,120 @@ function buildReport(
   }
 }
 
+// ─── Importação de dieta: helpers ─────────────────────────────────────────────
+
+interface ParsedFood {
+  name:      string
+  grams:     number
+  kcal:      number
+  p:         number
+  c:         number
+  f:         number
+  tacoMatch: boolean
+}
+
+function estimateUnitGrams(foodName: string): number {
+  const n = foodName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (/ovo/.test(n))                        return 50
+  if (/p[aã]o/.test(n))                    return 50
+  if (/banana/.test(n))                    return 100
+  if (/ma[cç][aã]/.test(n))               return 130
+  if (/laranja/.test(n))                   return 180
+  if (/biscoito|bolacha/.test(n))          return 10
+  if (/fatia|slice/.test(n))               return 30
+  if (/colher|col\.?\s*sopa/.test(n))      return 15
+  return 50
+}
+
+function parseDietText(text: string): Record<string, ParsedFood[]> {
+  const result: Record<string, ParsedFood[]> = {
+    cafe: [], almoco: [], lanche: [], jantar: [], ceia: [],
+  }
+  const MEAL_MAP: { pat: RegExp; id: string }[] = [
+    { pat: /caf[eé]|manh[aã]|pequeno.?almo[cç]o|desjejum/i, id: 'cafe'   },
+    { pat: /almo[cç]o/i,                                      id: 'almoco' },
+    { pat: /lanche/i,                                          id: 'lanche' },
+    { pat: /jantar|janta/i,                                    id: 'jantar' },
+    { pat: /ceia|notur/i,                                      id: 'ceia'   },
+  ]
+  let cur = 'cafe'
+  const lines = text.split(/[\r\n]+/).map(l => l.trim()).filter(l => l.length > 1)
+
+  for (const line of lines) {
+    // Meal header check (short lines only)
+    if (line.length < 60) {
+      let isMH = false
+      for (const mp of MEAL_MAP) {
+        if (mp.pat.test(line)) { cur = mp.id; isMH = true; break }
+      }
+      if (isMH) continue
+    }
+    // Skip obvious non-food lines
+    if (/^(total|macro|caloria|proteina|carboidrato|gordura|kcal|refeic)/i.test(line)) continue
+    if (/^\d+\s*(kcal|cal)/i.test(line)) continue
+
+    // Clean: remove bullets / list prefixes
+    const clean = line.replace(/^[\s\-\*•–—\d.)\]]+/, '').trim()
+    if (clean.length < 2) continue
+
+    // Try to parse: "Food name AMOUNT UNIT"
+    const m = clean.match(
+      /^(.+?)[\s\-:]+[\(\[]?\s*(\d+(?:[,.]\d+)?)\s*(g|gr(?:amas?)?|ml|mL|un(?:idades?)?|colheres?(?:\s+(?:de\s+)?sopa)?|x[íi]caras?|fatias?|porções?)\s*[\)\]]?\.?$/i,
+    )
+
+    if (m) {
+      const foodRaw = m[1].replace(/[:\(\[\]\)]+$/, '').trim()
+      const amount  = parseFloat(m[2].replace(',', '.'))
+      const unit    = m[3].toLowerCase()
+      let grams     = amount
+      if (/^un|fatia/i.test(unit))  grams = amount * estimateUnitGrams(foodRaw)
+      else if (/^col/i.test(unit))  grams = amount * 15
+      else if (/^x[íi]/i.test(unit)) grams = amount * 200
+      else if (/^por/i.test(unit))  grams = amount * 100
+
+      const taco = fuzzyMatchTACO(foodRaw)
+      const mult = grams / 100
+      result[cur].push({
+        name:      taco ? `${taco.nome} (${Math.round(grams)}g)` : `${foodRaw} (${Math.round(grams)}g)`,
+        grams:     Math.round(grams),
+        kcal:      taco ? Math.round(taco.kcal * mult) : 0,
+        p:         taco ? +(taco.p * mult).toFixed(1)  : 0,
+        c:         taco ? +(taco.c * mult).toFixed(1)  : 0,
+        f:         taco ? +(taco.f * mult).toFixed(1)  : 0,
+        tacoMatch: !!taco,
+      })
+    } else {
+      // No portion found: try TACO match with default 100g
+      const taco = fuzzyMatchTACO(clean)
+      if (taco) {
+        result[cur].push({
+          name: `${taco.nome} (100g)`, grams: 100,
+          kcal: taco.kcal, p: taco.p, c: taco.c, f: taco.f, tacoMatch: true,
+        })
+      }
+    }
+  }
+  return result
+}
+
+async function extractTextFromPDF(file: File): Promise<string> {
+  const pdfjs = await import('pdfjs-dist')
+  // CDN worker — compatible with Next.js without webpack config changes
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc =
+      `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${(pdfjs as any).version}/pdf.worker.min.js`
+  }
+  const ab  = await file.arrayBuffer()
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(ab) }).promise
+  const parts: string[] = []
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    parts.push(content.items.map((i: any) => ('str' in i ? i.str : '')).join(' '))
+  }
+  return parts.join('\n')
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
@@ -345,6 +460,24 @@ export default function Home() {
   const [reportAnchor,  setReportAnchor]  = useState(new Date().toISOString().split('T')[0])
   const [reportResult,  setReportResult]  = useState<ReportData | null>(null)
   const [reportStep,    setReportStep]    = useState<'select'|'view'>('select')
+
+  // ── TACO Modal ───────────────────────────────────────────────────────────────
+  const [showTACO,      setShowTACO]      = useState(false)
+  const [tacoQuery,     setTacoQuery]     = useState('')
+  const [tacoResults,   setTacoResults]   = useState<TacoFood[]>([])
+  const [tacoSelected,  setTacoSelected]  = useState<TacoFood | null>(null)
+  const [tacoPorcao,    setTacoPorcao]    = useState('100')
+  const [tacoMealIdx,   setTacoMealIdx]   = useState(0)
+
+  // ── Import Modal ─────────────────────────────────────────────────────────────
+  const [showImport,    setShowImport]    = useState(false)
+  const [importStep,    setImportStep]    = useState<'upload'|'processing'|'preview'|'done'>('upload')
+  const [importFile,    setImportFile]    = useState('')
+  const [importPreview, setImportPreview] = useState<Record<string, ParsedFood[]> | null>(null)
+  const [importMode,    setImportMode]    = useState<'replace'|'merge'>('replace')
+  const [importStats,   setImportStats]   = useState<Record<string, number>>({})
+  const [isDragging,    setIsDragging]    = useState(false)
+  const importFileRef = useRef<HTMLInputElement>(null)
 
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
@@ -687,6 +820,89 @@ export default function Home() {
     save({ alternatives: na, activeSubs: nas })
   }
 
+  // ── Ações: TACO ─────────────────────────────────────────────────────────────
+
+  const openTACO = (mealIdx = 0) => {
+    setTacoMealIdx(mealIdx); setTacoQuery(''); setTacoResults([]); setTacoSelected(null); setTacoPorcao('100'); setShowTACO(true)
+  }
+
+  const addTACOItem = () => {
+    if (!tacoSelected) return
+    const g    = parseFloat(tacoPorcao) || 100
+    const mult = g / 100
+    const item: MealItem = {
+      id:   newId(),
+      name: `${tacoSelected.nome} (${Math.round(g)}g)`,
+      kcal: Math.round(tacoSelected.kcal * mult),
+      p:    +(tacoSelected.p * mult).toFixed(1),
+      c:    +(tacoSelected.c * mult).toFixed(1),
+      f:    +(tacoSelected.f * mult).toFixed(1),
+    }
+    const nm = meals.map((m, mi) => mi !== tacoMealIdx ? m : { ...m, items: [...m.items, item] })
+    setMeals(nm); save({ meals: nm }); setShowTACO(false)
+  }
+
+  // ── Ações: Import ────────────────────────────────────────────────────────────
+
+  const processImportFile = async (file: File) => {
+    setImportFile(file.name)
+    setImportStep('processing')
+    try {
+      let text = ''
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        text = await extractTextFromPDF(file)
+      } else {
+        text = await file.text()
+      }
+      const parsed = parseDietText(text)
+      const stats: Record<string, number> = {}
+      let total = 0, matched = 0
+      for (const [key, foods] of Object.entries(parsed)) {
+        stats[key] = foods.length
+        total  += foods.length
+        matched += foods.filter(f => f.tacoMatch).length
+      }
+      stats._total   = total
+      stats._matched = matched
+      setImportPreview(parsed)
+      setImportStats(stats)
+      setImportStep('preview')
+    } catch (e) {
+      console.error('[Import]', e)
+      setImportStep('upload')
+      setImportFile('')
+    }
+  }
+
+  const applyImport = () => {
+    if (!importPreview) return
+    const mealIdMap: Record<string, string[]> = {
+      cafe:   ['cafe'],
+      almoco: ['almoco'],
+      lanche: ['lanche'],
+      jantar: ['jantar'],
+      ceia:   ['ceia'],
+    }
+    const nm = meals.map(m => {
+      const key = Object.keys(mealIdMap).find(k => mealIdMap[k].includes(m.id)) || m.id
+      const foods = importPreview[key]
+      if (!foods || foods.length === 0) return m
+      const newItems: MealItem[] = foods.map(f => ({
+        id:   newId(),
+        name: f.name,
+        kcal: f.kcal,
+        p:    f.p,
+        c:    f.c,
+        f:    f.f,
+      }))
+      return {
+        ...m,
+        items: importMode === 'replace' ? newItems : [...m.items, ...newItems],
+      }
+    })
+    setMeals(nm); save({ meals: nm }); setImportStep('done')
+  }
+
   // ── Cálculos hoje ───────────────────────────────────────────────────────────
 
   const today        = getToday()
@@ -798,6 +1014,222 @@ export default function Home() {
 
   return (
     <div>
+
+      {/* ══ Modal: TACO ══ */}
+      {showTACO && (
+        <div className="modal-overlay" onClick={() => setShowTACO(false)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">🥗 Banco TACO — Buscar Alimento</div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label className="config-goal-label" style={{ marginBottom: 6 }}>Adicionar em:</label>
+              <select
+                className="login-input"
+                value={tacoMealIdx}
+                onChange={e => setTacoMealIdx(Number(e.target.value))}
+              >
+                {meals.map((m, i) => <option key={m.id} value={i}>{m.title}</option>)}
+              </select>
+            </div>
+
+            <input
+              type="text"
+              className="login-input"
+              placeholder="Buscar alimento (ex: frango, arroz, ovo...)"
+              value={tacoQuery}
+              autoFocus
+              onChange={e => {
+                const q = e.target.value
+                setTacoQuery(q)
+                setTacoResults(q.trim().length >= 2 ? searchTACO(q) : [])
+                if (tacoSelected && !q.toLowerCase().includes(tacoSelected.nome.split(' ')[0].toLowerCase())) {
+                  setTacoSelected(null)
+                }
+              }}
+            />
+
+            {tacoResults.length > 0 && !tacoSelected && (
+              <div className="taco-results">
+                {tacoResults.map(food => (
+                  <button
+                    key={food.id}
+                    className="taco-result-item"
+                    onClick={() => { setTacoSelected(food); setTacoResults([]) }}
+                  >
+                    <div className="taco-result-name">{food.nome}</div>
+                    <div className="taco-result-cat">{food.cat} · {food.kcal} kcal/100g · P{food.p}g · C{food.c}g · G{food.f}g</div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tacoSelected && (
+              <div className="taco-calc-preview">
+                <div className="taco-calc-name">{tacoSelected.nome}</div>
+                <div className="taco-calc-cat">{tacoSelected.cat}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '10px 0' }}>
+                  <input
+                    type="number"
+                    className="login-input"
+                    style={{ width: 100, textAlign: 'center' }}
+                    value={tacoPorcao}
+                    min={1}
+                    onChange={e => setTacoPorcao(e.target.value)}
+                  />
+                  <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>gramas</span>
+                </div>
+                {(() => {
+                  const g = parseFloat(tacoPorcao) || 100
+                  const m = g / 100
+                  return (
+                    <div className="taco-calc-macros">
+                      <span>🔥 {Math.round(tacoSelected.kcal * m)} kcal</span>
+                      <span>P {+(tacoSelected.p * m).toFixed(1)}g</span>
+                      <span>C {+(tacoSelected.c * m).toFixed(1)}g</span>
+                      <span>G {+(tacoSelected.f * m).toFixed(1)}g</span>
+                    </div>
+                  )
+                })()}
+                <button
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  disabled={!tacoPorcao || parseFloat(tacoPorcao) <= 0}
+                  onClick={addTACOItem}
+                >
+                  ✅ Adicionar a {meals[tacoMealIdx]?.title}
+                </button>
+                <button
+                  className="btn btn-cancel"
+                  style={{ marginTop: 6 }}
+                  onClick={() => { setTacoSelected(null); setTacoQuery(''); setTacoResults([]) }}
+                >
+                  ← Buscar outro
+                </button>
+              </div>
+            )}
+
+            <button className="btn btn-cancel" style={{ marginTop: 12 }} onClick={() => setShowTACO(false)}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Importar Dieta ══ */}
+      {showImport && (
+        <div className="modal-overlay" onClick={() => { if (importStep !== 'processing') setShowImport(false) }}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">📄 Importar Dieta</div>
+
+            {importStep === 'upload' && (
+              <>
+                <div
+                  className={`import-dropzone ${isDragging ? 'dragging' : ''}`}
+                  onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={e => {
+                    e.preventDefault(); setIsDragging(false)
+                    const file = e.dataTransfer.files[0]
+                    if (file) processImportFile(file)
+                  }}
+                  onClick={() => importFileRef.current?.click()}
+                >
+                  <div className="import-dropzone-icon">📄</div>
+                  <div className="import-dropzone-text">Arraste aqui seu PDF ou arquivo de texto</div>
+                  <div className="import-dropzone-sub">Clique para selecionar · PDF, TXT, DOCX exportado como texto</div>
+                </div>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".pdf,.txt,.text"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) processImportFile(file)
+                  }}
+                />
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.6 }}>
+                  O sistema detecta automaticamente as refeições (Café da Manhã, Almoço, Lanche, Jantar, Ceia) e compara os alimentos com o banco TACO para extrair as calorias e macros.
+                </div>
+                <button className="btn btn-cancel" style={{ marginTop: 12 }} onClick={() => setShowImport(false)}>
+                  Cancelar
+                </button>
+              </>
+            )}
+
+            {importStep === 'processing' && (
+              <div style={{ textAlign: 'center', padding: '32px 0' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                <div style={{ fontSize: 15, fontWeight: 600 }}>Processando {importFile}...</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>Extraindo texto e reconhecendo alimentos</div>
+              </div>
+            )}
+
+            {importStep === 'preview' && importPreview && (
+              <>
+                <div className="import-stats-row">
+                  <span>📁 {importFile}</span>
+                  <span>{importStats._total || 0} alimentos encontrados · {importStats._matched || 0} no TACO</span>
+                </div>
+
+                <div className="import-mode-row">
+                  <label style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>Modo:</label>
+                  <button
+                    className={`import-mode-btn ${importMode === 'replace' ? 'active' : ''}`}
+                    onClick={() => setImportMode('replace')}
+                  >Substituir cardápio</button>
+                  <button
+                    className={`import-mode-btn ${importMode === 'merge' ? 'active' : ''}`}
+                    onClick={() => setImportMode('merge')}
+                  >Adicionar ao existente</button>
+                </div>
+
+                <div className="import-preview-list">
+                  {Object.entries(importPreview).map(([key, foods]) => {
+                    const mealTitle = meals.find(m => m.id === key)?.title || key
+                    if (foods.length === 0) return null
+                    return (
+                      <div key={key} className="import-meal-section">
+                        <div className="import-meal-title">{mealTitle} ({foods.length})</div>
+                        {foods.map((f, i) => (
+                          <div key={i} className={`import-item ${f.tacoMatch ? 'matched' : 'unmatched'}`}>
+                            <div className="import-item-name">{f.name}</div>
+                            <div className="import-item-macros">
+                              {f.tacoMatch
+                                ? `${f.kcal} kcal · P${f.p}g · C${f.c}g · G${f.f}g ✅`
+                                : 'Macros não encontrados no TACO ⚠️'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <button className="btn" style={{ marginTop: 12 }} onClick={applyImport}>
+                  ✅ {importMode === 'replace' ? 'Substituir' : 'Adicionar'} cardápio
+                </button>
+                <button className="btn btn-cancel" style={{ marginTop: 6 }} onClick={() => { setImportStep('upload'); setImportFile('') }}>
+                  ← Trocar arquivo
+                </button>
+              </>
+            )}
+
+            {importStep === 'done' && (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Cardápio importado!</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                  {importStats._total || 0} alimentos adicionados ao seu cardápio.
+                </div>
+                <button className="btn" onClick={() => { setShowImport(false); setImportStep('upload'); setImportFile('') }}>
+                  Fechar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ══ Modal: Histórico de Peso ══ */}
       {showWeightHistory && (
@@ -1688,7 +2120,16 @@ export default function Home() {
 
           {/* ── Meu Cardápio ── */}
           <div className="card">
-            <div className="card-title">Meu Cardápio</div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+              <div className="card-title" style={{ marginBottom:0 }}>Meu Cardápio</div>
+              <div style={{ display:'flex', gap:6 }}>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}>🥗 Buscar TACO</button>
+                <button className="btn btn-small" style={{ width:'auto', background:'var(--text-secondary)' }}
+                  onClick={() => { setImportStep('upload'); setImportFile(''); setImportPreview(null); setShowImport(true) }}>
+                  📄 Importar Dieta
+                </button>
+              </div>
+            </div>
             {meals.map((meal, mealIdx) => (
               <div key={meal.id} style={{ marginBottom:20 }}>
                 <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)', marginBottom:8 }}>
@@ -1706,10 +2147,16 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                <button className="config-reset-btn" style={{ marginTop:8, width:'100%', textAlign:'center' }}
-                  onClick={() => openItemModal('add', mealIdx)}>
-                  + Adicionar item
-                </button>
+                <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                  <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
+                    onClick={() => openItemModal('add', mealIdx)}>
+                    + Adicionar manual
+                  </button>
+                  <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
+                    onClick={() => openTACO(mealIdx)}>
+                    🥗 Buscar TACO
+                  </button>
+                </div>
               </div>
             ))}
           </div>
