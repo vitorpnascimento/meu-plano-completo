@@ -577,10 +577,22 @@ export default function Home() {
 
   // ── Ações: Lembretes ────────────────────────────────────────────────────────
 
-  const requestNotifPermission = async () => {
-    if (typeof Notification === 'undefined') return
-    const p = await Notification.requestPermission()
-    setNotifPermission(p)
+  const requestNotifPermission = async (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (typeof Notification === 'undefined') {
+      alert('Notificações não são suportadas neste navegador. No iPhone, tente adicionar o app à Tela de Início e abrir de lá.')
+      return
+    }
+    try {
+      const p = await Notification.requestPermission()
+      setNotifPermission(p)
+      if (p === 'granted') {
+        new Notification('🎉 Lembretes ativados!', { body: 'Você receberá notificações nos horários configurados.' })
+      }
+    } catch {
+      alert('Não foi possível solicitar permissão de notificação neste navegador.')
+    }
   }
 
   const toggleReminders = (enabled: boolean) => {
@@ -1714,26 +1726,68 @@ export default function Home() {
           <div className="card">
             <div className="card-title">🔔 Lembretes de Refeição</div>
 
-            {notifPermission === 'default' && (
-              <div className="reminder-banner">
-                <span>Permita notificações para receber lembretes</span>
-                <button className="btn btn-small" style={{ width:'auto' }} onClick={requestNotifPermission}>
-                  Permitir
-                </button>
-              </div>
-            )}
-            {notifPermission === 'denied' && (
-              <div className="reminder-banner reminder-banner--denied">
-                Notificações bloqueadas. Habilite nas configurações do navegador para usar lembretes.
-              </div>
-            )}
+            {(() => {
+              const notifSupported = typeof window !== 'undefined' && 'Notification' in window
+              const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
+              const isStandalone = typeof window !== 'undefined' && (window.navigator as any).standalone === true
+
+              if (!notifSupported) {
+                if (isIOS && !isStandalone) {
+                  // iOS Safari: Web Notifications não suportadas fora de PWA
+                  return (
+                    <div className="reminder-banner reminder-banner--info">
+                      <span style={{ lineHeight: 1.4 }}>
+                        No iPhone, notificações funcionam apenas como app instalado.{' '}
+                        <strong>Adicione à Tela de Início</strong> (Safari → Compartilhar → Adicionar à Tela de Início) e abra de lá.
+                      </span>
+                    </div>
+                  )
+                }
+                return (
+                  <div className="reminder-banner reminder-banner--denied">
+                    Notificações não suportadas neste navegador.
+                  </div>
+                )
+              }
+
+              if (notifPermission === 'default') {
+                return (
+                  <div className="reminder-banner">
+                    <span>Permita notificações para receber lembretes</span>
+                    <button
+                      className="btn btn-small"
+                      style={{ width:'auto', flexShrink:0 }}
+                      onClick={requestNotifPermission}
+                      onTouchEnd={requestNotifPermission}
+                    >
+                      Permitir
+                    </button>
+                  </div>
+                )
+              }
+
+              if (notifPermission === 'denied') {
+                return (
+                  <div className="reminder-banner reminder-banner--denied">
+                    Notificações bloqueadas. Vá em Configurações do navegador e permita notificações para este site.
+                  </div>
+                )
+              }
+
+              // granted — mostra status positivo
+              return (
+                <div className="reminder-banner reminder-banner--granted">
+                  ✅ Notificações permitidas
+                </div>
+              )
+            })()}
 
             <div className="reminder-toggle-row">
               <span style={{ fontSize:14, fontWeight:500 }}>Ativar Lembretes</span>
               <button
                 className={`toggle-btn ${remindersEnabled ? 'toggle-on' : 'toggle-off'}`}
                 onClick={() => toggleReminders(!remindersEnabled)}
-                disabled={notifPermission === 'denied'}
+                disabled={notifPermission === 'denied' || (typeof window !== 'undefined' && !('Notification' in window))}
               >
                 {remindersEnabled ? 'ON' : 'OFF'}
               </button>

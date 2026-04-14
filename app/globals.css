@@ -1382,6 +1382,22 @@ textarea {
   justify-content: flex-start;
 }
 
+.reminder-banner--info {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fcd34d;
+  justify-content: flex-start;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.reminder-banner--granted {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.3);
+  color: var(--success);
+  justify-content: flex-start;
+}
+
 .reminder-toggle-row {
   display: flex;
   align-items: center;
