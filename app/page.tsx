@@ -97,13 +97,14 @@ export default function Home() {
     setMealCheckboxes(checkboxes)
   }
 
-  const saveData = () => {
+  const saveData = (overrides = {}) => {
     localStorage.setItem('dietAppData', JSON.stringify({
       meals: mealsData,
       dayComplete,
       training: trainingData,
       weights: weightsData,
-      notes: notesData
+      notes: notesData,
+      ...overrides
     }))
   }
 
@@ -111,36 +112,32 @@ export default function Home() {
     const today = getToday()
     const newMeals = { ...mealsData }
     if (!newMeals[today]) newMeals[today] = {}
-    
+
     if (newMeals[today][idx]) {
       delete newMeals[today][idx]
     } else {
       newMeals[today][idx] = true
     }
-    
+
     setMealsData(newMeals)
     const newCheckboxes = [...mealCheckboxes]
     newCheckboxes[idx] = !newCheckboxes[idx]
     setMealCheckboxes(newCheckboxes)
-    saveData()
+    saveData({ meals: newMeals })
   }
 
   const toggleDayComplete = () => {
     const today = getToday()
-    setDayComplete({
-      ...dayComplete,
-      [today]: !dayComplete[today]
-    })
-    saveData()
+    const newDayComplete = { ...dayComplete, [today]: !dayComplete[today] }
+    setDayComplete(newDayComplete)
+    saveData({ dayComplete: newDayComplete })
   }
 
   const addWeight = (weight, date = null) => {
     const finalDate = date || getToday()
-    setWeightsData({
-      ...weightsData,
-      [finalDate]: parseFloat(weight)
-    })
-    saveData()
+    const newWeights = { ...weightsData, [finalDate]: parseFloat(weight) }
+    setWeightsData(newWeights)
+    saveData({ weights: newWeights })
   }
 
   const addNote = (text) => {
@@ -152,7 +149,7 @@ export default function Home() {
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     })
     setNotesData(newNotes)
-    saveData()
+    saveData({ notes: newNotes })
   }
 
   const calculateMacros = () => {
