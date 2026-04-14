@@ -875,36 +875,65 @@ export default function Home() {
 
   // ── Ações: Ajuste de Quantidade (Unidades) ──────────────────────────────────
 
-  const adjustQuantity = (mealId: string, itemId: string, dir: 'increase' | 'decrease') => {
+  // Scales a unit-based item (or its active substitution) by one step.
+  // currentQty is read from display.name at render time so it works for subs too.
+  const adjustQuantity = (mealId: string, itemId: string, dir: 'increase' | 'decrease', currentQty: number) => {
+    const newQty = dir === 'increase' ? Math.min(99, currentQty + 1) : Math.max(1, currentQty - 1)
+    if (newQty === currentQty) return
+    const scale = newQty / currentQty
+
+    // Helper: rescale a name that may contain "(N unit)" and/or "Ng"
+    const scaleName = (name: string) =>
+      name
+        .replace(/\((\d{1,2})(\s+[^\d)]+)\)/i, `(${newQty}$2)`)
+        .replace(/\b(\d+)g\b/, g2 => `${Math.round(parseInt(g2) * scale)}g`)
+
+    const subActive = activeSubs[itemId]
+    if (subActive) {
+      // Scale the active substitution
+      const newSub: SubOption = {
+        ...subActive,
+        kcal: Math.round(subActive.kcal * scale),
+        p:    +((subActive.p * scale).toFixed(1)),
+        c:    +((subActive.c * scale).toFixed(1)),
+        f:    +((subActive.f * scale).toFixed(1)),
+        name: scaleName(subActive.name),
+      }
+      const nas = { ...activeSubs, [itemId]: newSub }
+      // Also sync unitQty on the base item if it has one
+      const nm = meals.map(m => m.id !== mealId ? m : {
+        ...m,
+        items: m.items.map(it =>
+          it.id !== itemId || it.unitQty === undefined ? it : { ...it, unitQty: newQty }
+        ),
+      })
+      setActiveSubs(nas)
+      setMeals(nm)
+      save({ activeSubs: nas, meals: nm })
+      return
+    }
+
+    // No active sub — scale the base item directly
     const nm = meals.map(m => {
       if (m.id !== mealId) return m
       return {
         ...m,
         items: m.items.map(item => {
-          if (item.id !== itemId || item.unitQty === undefined) return item
-          const newQty = dir === 'increase'
-            ? Math.min(99, item.unitQty + 1)
-            : Math.max(1, item.unitQty - 1)
-          if (newQty === item.unitQty) return item
-          const scale   = newQty / item.unitQty
-          const newKcal = Math.round(item.kcal * scale)
-          const newP    = +((item.p * scale).toFixed(1))
-          const newC    = +((item.c * scale).toFixed(1))
-          const newF    = +((item.f * scale).toFixed(1))
-          // Update "(X un)" count in name
-          let newName = item.name.replace(/\(\d+ un\)/i, `(${newQty} un)`)
-          // Update trailing gram value, e.g. "100g" → "200g"
-          newName = newName.replace(/\b(\d+)g\b/, g2 => `${Math.round(parseInt(g2) * scale)}g`)
-          return { ...item, unitQty: newQty, kcal: newKcal, p: newP, c: newC, f: newF, name: newName }
+          if (item.id !== itemId) return item
+          return {
+            ...item,
+            unitQty: newQty,
+            kcal: Math.round(item.kcal * scale),
+            p:    +((item.p * scale).toFixed(1)),
+            c:    +((item.c * scale).toFixed(1)),
+            f:    +((item.f * scale).toFixed(1)),
+            name: scaleName(item.name),
+          }
         }),
       }
     })
-    // Clear any active sub for this item — calorie-match is now stale
-    const nas = { ...activeSubs }
-    delete nas[itemId]
-    setActiveSubs(nas)
     setMeals(nm)
-    save({ meals: nm, activeSubs: nas })
+    save({ meals: nm })
   }
 
   // ── Ações: Substituidores ───────────────────────────────────────────────────
@@ -2162,10 +2191,13 @@ export default function Home() {
                   Nenhum alimento — adicione em Config
                 </div>
               ) : (meal.items ?? []).map(item => {
-                const subActive = activeSubs[item.id]
-                const display   = subActive || item
-                const alts      = alternatives[item.id] || []
-                const isOpen    = openAlt === item.id
+                const subActive  = activeSubs[item.id]
+                const display    = subActive || item
+                const alts       = alternatives[item.id] || []
+                const isOpen     = openAlt === item.id
+                // Detect unit qty from the *displayed* name (sub or base item)
+                const qtyMatch   = /\((\d{1,2})\s+[^\d)]+\)/i.exec(display.name)
+                const displayQty = qtyMatch ? parseInt(qtyMatch[1], 10) : undefined
                 return (
                   <div key={item.id} className="meal-item-wrap">
                     <div className="meal-item" onClick={() => toggleItem(item.id)}>
@@ -2183,19 +2215,19 @@ export default function Home() {
                     <div className="alt-wrap" onClick={e => e.stopPropagation()}>
                       <button className="alt-btn" title="Substituir alimento"
                         onClick={() => setTodaySubItem(item)}>🔄</button>
-                      {item.unitQty !== undefined && (
+                      {displayQty !== undefined && (
                         <>
                           <button
                             className="qty-btn"
                             title="Diminuir quantidade"
-                            disabled={item.unitQty <= 1}
-                            onClick={() => adjustQuantity(meal.id, item.id, 'decrease')}
+                            disabled={displayQty <= 1}
+                            onClick={() => adjustQuantity(meal.id, item.id, 'decrease', displayQty)}
                           >➖</button>
                           <button
                             className="qty-btn"
                             title="Aumentar quantidade"
-                            disabled={item.unitQty >= 99}
-                            onClick={() => adjustQuantity(meal.id, item.id, 'increase')}
+                            disabled={displayQty >= 99}
+                            onClick={() => adjustQuantity(meal.id, item.id, 'increase', displayQty)}
                           >➕</button>
                         </>
                       )}
