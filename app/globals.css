@@ -993,6 +993,74 @@ textarea {
 
 .summary-val { font-weight: 600; color: var(--primary) }
 
+/* ── Sync badge (header) ──────────────────────────────────────────────────── */
+
+.sync-badge {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sync-badge--synced  { color: var(--success); border-color: var(--success); background: rgba(76,206,151,0.1); }
+.sync-badge--syncing { color: var(--primary); border-color: var(--primary); background: rgba(87,157,255,0.1); animation: pulse 1.2s infinite; }
+.sync-badge--offline { color: var(--warning); border-color: var(--warning); background: rgba(248,116,98,0.1); }
+.sync-badge--error   { color: var(--warning); border-color: var(--warning); background: rgba(248,116,98,0.1); }
+.sync-badge--idle    { color: var(--text-secondary); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+
+/* ── Sync section (Config) ────────────────────────────────────────────────── */
+
+.sync-code-block {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  background: var(--dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--success);
+  line-height: 1.8;
+}
+
+.sync-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+  color: var(--text-secondary);
+}
+
+.sync-status-val             { font-weight: 600; }
+.sync-status-val--synced     { color: var(--success); }
+.sync-status-val--syncing    { color: var(--primary); }
+.sync-status-val--offline    { color: var(--warning); }
+.sync-status-val--error      { color: var(--warning); }
+.sync-status-val--idle       { color: var(--text-secondary); }
+
+.sync-id-display {
+  flex: 1;
+  display: block;
+  background: var(--dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  font-family: 'Courier New', monospace;
+  color: var(--primary);
+  text-align: center;
+}
+
 /* ── Peso hoje (destaque) ─────────────────────────────────────────────────── */
 
 .today-weight-card {

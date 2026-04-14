@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   BarChart, Bar, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts'
+import {
+  isFirebaseConfigured,
+  saveToFirebase,
+  loadFromFirebase,
+} from '../lib/firebase'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -38,6 +43,8 @@ interface WeightEntry {
   foto?:     string
   calorias?: number
 }
+
+type SyncStatus = 'unconfigured' | 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +135,10 @@ function getLastNDates(n: number): string[] {
 
 function newId() { return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
+function genSyncId() {
+  return Math.random().toString(36).slice(2, 10).toUpperCase()
+}
+
 function rawPeso(entry: any): number | null {
   if (entry == null) return null
   const v = typeof entry === 'object' ? entry.peso : entry
@@ -147,6 +158,15 @@ function rawCalorias(entry: any): number | null {
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
 const BLANK_SUB_FORM  = { name: '', kcal: '', p: '', c: '', f: '', targetId: '' }
 
+const SYNC_LABELS: Record<SyncStatus, string> = {
+  unconfigured: '',
+  idle:    '☁️',
+  syncing: '⟳',
+  synced:  '☁️ ✅',
+  offline: '📵',
+  error:   '⚠️',
+}
+
 export default function Home() {
   // Cardápio dinâmico
   const [meals,          setMeals]          = useState<Meal[]>(DEFAULT_MEALS)
@@ -161,6 +181,12 @@ export default function Home() {
   const [weightsData,    setWeightsData]    = useState<Record<string, any>>({})
   const [weightPhoto,    setWeightPhoto]    = useState('')
   const [userGoals,      setUserGoals]      = useState(DEFAULT_GOALS)
+
+  // Sincronização Firebase
+  const [syncId,         setSyncId]         = useState('')
+  const [syncStatus,     setSyncStatus]     = useState<SyncStatus>('unconfigured')
+  const [syncIdInput,    setSyncIdInput]    = useState('')
+  const [copiedId,       setCopiedId]       = useState(false)
 
   // UI
   const [activeTab,      setActiveTab]      = useState('hoje')
@@ -187,22 +213,81 @@ export default function Home() {
   const CAL_META = userGoals.cals
   const CAL_MAX  = userGoals.cals + 200
 
+  // ── applyData ─────────────────────────────────────────────────────────────
+  // Aplica dados carregados (Firebase ou localStorage) no estado
+
+  const applyData = useCallback((d: any, localPhotos?: Record<string, any>) => {
+    if (d.meals?.[0]?.items?.[0]?.id) setMeals(d.meals)
+    if (d.alternatives) setAlternatives({ ...DEFAULT_ALTERNATIVES, ...d.alternatives })
+    if (d.activeSubs)   setActiveSubs(d.activeSubs)
+    if (d.checked)      setChecked(d.checked)
+    if (d.dayStats)     setDayStats(d.dayStats)
+
+    // Peso: mescla dados do Firebase com fotos locais (fotos não vão pro Firebase)
+    const wh: Record<string, any> = d.weightHistory || d.weights || {}
+    if (localPhotos) {
+      const merged: Record<string, any> = {}
+      for (const [date, entry] of Object.entries(wh)) {
+        const localFoto = localPhotos[date]?.foto || null
+        merged[date] = localFoto ? { ...(entry as any), foto: localFoto } : entry
+      }
+      // Adiciona entradas locais que o Firebase não tem (casos offline)
+      for (const [date, entry] of Object.entries(localPhotos)) {
+        if (!merged[date]) merged[date] = entry
+      }
+      setWeightsData(merged)
+    } else {
+      setWeightsData(wh)
+    }
+
+    if (d.userGoals) setUserGoals(d.userGoals)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Load ───────────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const raw = localStorage.getItem('dietAppData')
-    if (!raw) return
-    const d = JSON.parse(raw)
-    if (d.meals?.[0]?.items?.[0]?.id) setMeals(d.meals)
-    if (d.alternatives)  setAlternatives({ ...DEFAULT_ALTERNATIVES, ...d.alternatives })
-    if (d.activeSubs)    setActiveSubs(d.activeSubs)
-    if (d.checked)       setChecked(d.checked)
-    if (d.dayStats)      setDayStats(d.dayStats)
-    // suporta chave nova (weightHistory) e antiga (weights)
-    if (d.weightHistory) setWeightsData(d.weightHistory)
-    else if (d.weights)  setWeightsData(d.weights)
-    if (d.userGoals)     setUserGoals(d.userGoals)
-  }, [])
+    // 1. Obter ou criar syncId
+    let id = localStorage.getItem('dietSyncId') || ''
+    if (!id) {
+      id = genSyncId()
+      localStorage.setItem('dietSyncId', id)
+    }
+    setSyncId(id)
+
+    // Dados locais (usado como fallback e para fotos)
+    const localRaw  = localStorage.getItem('dietAppData')
+    const localData = localRaw ? JSON.parse(localRaw) : null
+    const localWH   = localData?.weightHistory || localData?.weights || {}
+
+    if (isFirebaseConfigured()) {
+      setSyncStatus('syncing')
+      loadFromFirebase(id)
+        .then(fbData => {
+          if (fbData) {
+            // Firebase tem dados → aplica, mas restaura fotos locais
+            applyData(fbData, localWH)
+            setSyncStatus('synced')
+          } else if (localData) {
+            // Firebase vazio, mas local tem dados → aplica local e sobe pro Firebase
+            applyData(localData)
+            setSyncStatus('syncing')
+            saveToFirebase(id, localData).then(ok =>
+              setSyncStatus(ok ? 'synced' : 'offline')
+            )
+          } else {
+            setSyncStatus('idle')
+          }
+        })
+        .catch(() => {
+          // Firebase falhou → usa localStorage
+          if (localData) applyData(localData)
+          setSyncStatus('offline')
+        })
+    } else {
+      if (localData) applyData(localData)
+      setSyncStatus('unconfigured')
+    }
+  }, [applyData])
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -214,11 +299,63 @@ export default function Home() {
 
   // ── Save ───────────────────────────────────────────────────────────────────
 
-  const save = (overrides: Record<string,any> = {}) => {
-    localStorage.setItem('dietAppData', JSON.stringify({
+  const save = (overrides: Record<string, any> = {}) => {
+    const data = {
       meals, alternatives, activeSubs, checked, dayStats,
-      weightHistory: weightsData, userGoals, ...overrides,
-    }))
+      weightHistory: weightsData, userGoals,
+      ...overrides,
+    }
+    localStorage.setItem('dietAppData', JSON.stringify(data))
+
+    if (isFirebaseConfigured()) {
+      const id = localStorage.getItem('dietSyncId')
+      if (id) {
+        setSyncStatus('syncing')
+        saveToFirebase(id, data).then(ok =>
+          setSyncStatus(ok ? 'synced' : 'offline')
+        )
+      }
+    }
+  }
+
+  // ── Conectar a novo ID de sync ─────────────────────────────────────────────
+
+  const connectToSyncId = async (newId: string) => {
+    const id = newId.toUpperCase().trim()
+    if (id.length < 4) return
+    localStorage.setItem('dietSyncId', id)
+    setSyncId(id)
+    setSyncStatus('syncing')
+    setSyncIdInput('')
+
+    const localRaw  = localStorage.getItem('dietAppData')
+    const localData = localRaw ? JSON.parse(localRaw) : null
+    const localWH   = localData?.weightHistory || localData?.weights || {}
+
+    try {
+      const fbData = await loadFromFirebase(id)
+      if (fbData) {
+        applyData(fbData, localWH)
+        setSyncStatus('synced')
+      } else {
+        // ID novo sem dados → sobe dados locais
+        if (localData) {
+          const ok = await saveToFirebase(id, localData)
+          setSyncStatus(ok ? 'synced' : 'offline')
+        } else {
+          setSyncStatus('idle')
+        }
+      }
+    } catch {
+      setSyncStatus('error')
+    }
+  }
+
+  const copySyncId = () => {
+    navigator.clipboard.writeText(syncId).then(() => {
+      setCopiedId(true)
+      setTimeout(() => setCopiedId(false), 2000)
+    })
   }
 
   // ── Ações: Hoje ────────────────────────────────────────────────────────────
@@ -351,7 +488,7 @@ export default function Home() {
 
   // ── Cálculos hoje ──────────────────────────────────────────────────────────
 
-  const today       = getToday()
+  const today        = getToday()
   const todayChecked = checked[today] || {}
   const { cals: totalCals, p: totalP, c: totalC, f: totalF } = calcDayMacros(meals, todayChecked, activeSubs)
   const mealsCompleted = meals.filter(m => m.items.length > 0 && m.items.every(it => todayChecked[it.id])).length
@@ -427,7 +564,6 @@ export default function Home() {
     .map(d => ({ label: dateLabel(d), peso: rawPeso(weightsData[d]) }))
     .filter(d => d.peso !== null) as { label:string; peso:number }[]
 
-  // Gráfico duplo (peso + calorias) para Estatísticas
   const dualChartData = monthDates
     .map(d => {
       const peso = rawPeso(weightsData[d])
@@ -440,7 +576,6 @@ export default function Home() {
     })
     .filter(d => d.peso !== undefined || d.cals !== undefined)
 
-  // Peso semana: primeiro e último com registro
   const weekFirstW     = weekWeightData[0]?.peso ?? null
   const weekLastW      = weekWeightData[weekWeightData.length - 1]?.peso ?? null
   const weekWeightDiff = weekFirstW !== null && weekLastW !== null ? +((weekLastW - weekFirstW).toFixed(1)) : null
@@ -449,6 +584,8 @@ export default function Home() {
   const weekBadgeText  = weekDiff < 0 ? `${Math.abs(weekDiff)} kcal abaixo` : weekDiff > 0 ? `${weekDiff} kcal acima` : 'Semana no alvo'
 
   const allItemOptions = meals.flatMap(m => m.items.map(it => ({ id: it.id, label: `${m.title} → ${it.name}` })))
+
+  const firebaseConfigured = isFirebaseConfigured()
 
   // ── JSX ────────────────────────────────────────────────────────────────────
 
@@ -461,7 +598,6 @@ export default function Home() {
           <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
             <div className="modal-title">📊 Histórico de Peso</div>
 
-            {/* Stats rápidas */}
             <div className="wh-stats-grid">
               {[
                 { label: 'Peso inicial', val: firstW !== null ? `${firstW}kg` : '—' },
@@ -481,7 +617,6 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Gráfico evolução */}
             {weightHistoryAsc.length >= 2 && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Evolução do Peso</div>
@@ -500,17 +635,11 @@ export default function Home() {
               </div>
             )}
 
-            {/* Tabela */}
             {weightHistoryAsc.length > 0 ? (
               <div style={{ overflowX: 'auto', marginBottom: 16 }}>
                 <table className="wh-table">
                   <thead>
-                    <tr>
-                      <th>Data</th>
-                      <th>Peso</th>
-                      <th>Foto</th>
-                      <th>Diferença</th>
-                    </tr>
+                    <tr><th>Data</th><th>Peso</th><th>Foto</th><th>Diferença</th></tr>
                   </thead>
                   <tbody>
                     {weightHistoryDesc.map((e, i) => {
@@ -647,8 +776,17 @@ export default function Home() {
       {/* ── Header ── */}
       <header>
         <div className="header-content">
-          <h1>💪 Meu Plano</h1>
-          <div className="subtitle">Acompanhamento de Dieta & Treino</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <h1>💪 Meu Plano</h1>
+              <div className="subtitle">Acompanhamento de Dieta & Treino</div>
+            </div>
+            {firebaseConfigured && syncStatus !== 'unconfigured' && (
+              <div className={`sync-badge sync-badge--${syncStatus}`}>
+                {SYNC_LABELS[syncStatus]}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -718,7 +856,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Refeições */}
           {meals.map(meal => (
             <div key={meal.id} className="card">
               <div className="card-title">
@@ -773,7 +910,6 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ PESO */}
         <div className={`tab-content ${activeTab === 'peso' ? 'active' : ''}`}>
 
-          {/* Peso de hoje em destaque */}
           {todayWeight !== null ? (
             <div className="card today-weight-card">
               <div className="today-weight-date">
@@ -801,7 +937,6 @@ export default function Home() {
             </div>
           ) : null}
 
-          {/* Formulário de registro */}
           <div className="card">
             <div className="card-title">{todayWeight !== null ? 'Atualizar Peso de Hoje' : 'Registrar Peso'}</div>
             <input type="number" placeholder="Seu peso em kg" step="0.1" id="weight-input" />
@@ -825,7 +960,6 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ ESTATÍSTICAS */}
         <div className={`tab-content ${activeTab === 'estatísticas' ? 'active' : ''}`}>
 
-          {/* ── Seu Progresso (sempre visível, acima das sub-tabs) ── */}
           {(weightHistoryAsc.length >= 1 || dualChartData.some(d => d.cals !== undefined)) && (
             <div className="card" style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -838,7 +972,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Gráfico duplo peso + calorias */}
               {dualChartData.length >= 2 ? (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
@@ -864,11 +997,10 @@ export default function Home() {
                 </div>
               ) : (
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, textAlign: 'center', padding: '16px 0' }}>
-                  Registre peso em pelo menos 2 dias para ver o gráfico de progresso.
+                  Registre peso em pelo menos 2 dias para ver o gráfico.
                 </div>
               )}
 
-              {/* Insights automáticos */}
               <div>
                 {totalLoss !== null && totalLoss > 0 && (
                   <div className="insight-item">
@@ -882,12 +1014,7 @@ export default function Home() {
                 )}
                 {weeklyAvg !== null && weeklyAvg > 0 && (
                   <div className="insight-item">
-                    📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong> {weeklyAvg >= 0.3 && weeklyAvg <= 1 ? '✅ bom ritmo!' : weeklyAvg > 1 ? '⚠️ ritmo muito alto' : ''}
-                  </div>
-                )}
-                {weeklyAvg !== null && weeklyAvg <= 0 && (
-                  <div className="insight-item">
-                    📊 Tendência: <strong>estável</strong> — continue consistente
+                    📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong>{weeklyAvg >= 0.3 && weeklyAvg <= 1 ? ' ✅ bom ritmo!' : weeklyAvg > 1 ? ' ⚠️ ritmo muito alto' : ''}
                   </div>
                 )}
                 {(() => {
@@ -897,7 +1024,7 @@ export default function Home() {
                   return (
                     <div className="insight-item">
                       {diff > 100
-                        ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer um pouco mais`
+                        ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer mais`
                         : diff < -100
                         ? `🔴 Calorias: ${Math.abs(diff)} kcal acima da meta no último registro`
                         : `🟢 Calorias dentro da meta no último registro`}
@@ -906,7 +1033,7 @@ export default function Home() {
                 })()}
                 {weightHistoryAsc.length === 0 && (
                   <div className="insight-item" style={{ color: 'var(--text-secondary)' }}>
-                    Registre seu peso na aba Peso para ver insights de progresso aqui.
+                    Registre seu peso na aba Peso para ver insights aqui.
                   </div>
                 )}
               </div>
@@ -971,7 +1098,6 @@ export default function Home() {
 
           {statsSubTab === 'semanal' && (
             <div>
-              {/* Badge de peso semanal */}
               {weekWeightDiff !== null && weekFirstW !== null && weekLastW !== null && (
                 <div className="weight-badge-card">
                   <span style={{ fontSize: 18 }}>{weekWeightDiff < 0 ? '📉' : weekWeightDiff > 0 ? '📈' : '➡️'}</span>
@@ -986,7 +1112,6 @@ export default function Home() {
                   </div>
                 </div>
               )}
-
               <div className="card">
                 <div className="card-title">Calorias — 7 Dias</div>
                 <ResponsiveContainer width="100%" height={200}>
@@ -1096,6 +1221,86 @@ export default function Home() {
 
         {/* ══════════════════════════════════════════════════════ CONFIG */}
         <div className={`tab-content ${activeTab === 'config' ? 'active' : ''}`}>
+
+          {/* ── Sincronização em Nuvem ── */}
+          <div className="card">
+            <div className="card-title">☁️ Sincronização em Nuvem</div>
+
+            {!firebaseConfigured ? (
+              <div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
+                  Firebase não configurado. Para ativar a sincronização entre dispositivos, adicione as variáveis de ambiente do Firebase.
+                </div>
+                <div className="sync-code-block">
+                  NEXT_PUBLIC_FIREBASE_API_KEY=...<br/>
+                  NEXT_PUBLIC_FIREBASE_DATABASE_URL=...<br/>
+                  NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
+                  Crie um projeto gratuito em firebase.google.com → Realtime Database → copie a config para o Vercel em Settings › Environment Variables.
+                </div>
+              </div>
+            ) : (
+              <div>
+                {/* Status */}
+                <div className="sync-status-row">
+                  <span>Status:</span>
+                  <span className={`sync-status-val sync-status-val--${syncStatus}`}>
+                    {syncStatus === 'synced'  && '✅ Sincronizado'}
+                    {syncStatus === 'syncing' && '⟳ Sincronizando...'}
+                    {syncStatus === 'offline' && '📵 Offline (dados salvos localmente)'}
+                    {syncStatus === 'error'   && '⚠️ Erro de sincronização'}
+                    {syncStatus === 'idle'    && '☁️ Aguardando'}
+                  </span>
+                </div>
+
+                {/* Meu ID */}
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    Meu ID de Sincronização
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <code className="sync-id-display">{syncId}</code>
+                    <button className="btn btn-small" style={{ width: 'auto', flexShrink: 0 }} onClick={copySyncId}>
+                      {copiedId ? '✅ Copiado!' : 'Copiar'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
+                    Compartilhe este ID com seus outros dispositivos para sincronizar os dados.
+                  </div>
+                </div>
+
+                {/* Conectar a outro ID */}
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    Usar ID de outro dispositivo
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      style={{ marginBottom: 0, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'monospace' }}
+                      placeholder="Cole o ID aqui (ex: K7M2X9P1)"
+                      maxLength={12}
+                      value={syncIdInput}
+                      onChange={e => setSyncIdInput(e.target.value.toUpperCase())}
+                    />
+                    <button
+                      className="btn btn-small"
+                      style={{ width: 'auto', flexShrink: 0 }}
+                      disabled={syncIdInput.length < 4}
+                      onClick={() => connectToSyncId(syncIdInput)}
+                    >
+                      Conectar
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 6 }}>
+                    ⚠️ Ao conectar, os dados deste dispositivo serão substituídos pelos dados do ID informado.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Minhas Metas */}
           <div className="card">
