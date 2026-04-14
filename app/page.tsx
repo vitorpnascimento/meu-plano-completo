@@ -25,7 +25,7 @@ const MACROS_PER_ITEM = [
   { kcal: 15, p: 0, c: 3, f: 0 }
 ]
 
-const MEALS = [
+const MEALS: [string, string[][]][] = [
   ["Refeição 1 - Café da Manhã (400 kcal)", [
     ["2 ovos inteiros", "155 kcal | P: 12g C: 1g G: 11g"],
     ["2 fatias de pão ou 1 francês", "150 kcal | P: 5g C: 28g G: 2g"],
