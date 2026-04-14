@@ -1229,8 +1229,16 @@ export default function Home() {
         }
       }),
     }))
+    // Sync userGoals.cals with the diet target so CAL_META always matches.
+    // This covers the case where the user typed the target directly (bypassing
+    // the calculator "Usar →" button that also saves the goal).
+    const target = parseInt(dietTarget)
+    const ng = target > 0 && target !== userGoals.cals
+      ? { ...userGoals, cals: target }
+      : userGoals
+    if (ng !== userGoals) setUserGoals(ng)
     setMeals(nm)
-    save({ meals: nm })
+    save({ meals: nm, userGoals: ng })
     setGeneratedDiet(null)
     setActiveTab('hoje')
   }
