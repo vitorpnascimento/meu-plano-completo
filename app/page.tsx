@@ -339,13 +339,6 @@ export default function Home() {
   const [subModal,  setSubModal]  = useState(false)
   const [subForm,   setSubForm]   = useState(BLANK_SUB_FORM)
 
-  // ── Lembretes ───────────────────────────────────────────────────────────────
-  const DEFAULT_REMINDER_TIMES = { cafe:'07:00', almoco:'12:00', lanche:'15:00', jantar:'19:00', ceia:'21:00' }
-  const [remindersEnabled, setRemindersEnabled] = useState(false)
-  const [reminderTimes,    setReminderTimes]    = useState(DEFAULT_REMINDER_TIMES)
-  const [reminderDraft,    setReminderDraft]    = useState(DEFAULT_REMINDER_TIMES)
-  const [notifPermission,  setNotifPermission]  = useState<NotificationPermission>('default')
-
   // ── Relatório ────────────────────────────────────────────────────────────────
   const [showReport,    setShowReport]    = useState(false)
   const [reportPeriod,  setReportPeriod]  = useState<ReportPeriod>('weekly')
@@ -502,53 +495,6 @@ export default function Home() {
     return () => document.removeEventListener('click', fn)
   }, [openAlt])
 
-  // ── Carrega configurações de lembrete do localStorage ──────────────────────
-  useEffect(() => {
-    const raw = localStorage.getItem('reminderSettings')
-    if (raw) {
-      try {
-        const s = JSON.parse(raw)
-        if (typeof s.enabled === 'boolean') setRemindersEnabled(s.enabled)
-        if (s.times && typeof s.times === 'object') {
-          setReminderTimes(t => ({ ...t, ...s.times }))
-          setReminderDraft(t => ({ ...t, ...s.times }))
-        }
-      } catch {}
-    }
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setNotifPermission(Notification.permission)
-    }
-  }, [])
-
-  // ── Intervalo de verificação de lembretes ──────────────────────────────────
-  useEffect(() => {
-    if (!remindersEnabled) return
-    const firedKeys = new Set<string>()
-    const MEAL_LABELS: Record<string, string> = {
-      cafe:'Café da Manhã', almoco:'Almoço', lanche:'Lanche', jantar:'Jantar', ceia:'Ceia',
-    }
-    const check = () => {
-      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
-      const now = new Date()
-      const hm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
-      const day = now.toISOString().split('T')[0]
-      for (const [meal, time] of Object.entries(reminderTimes)) {
-        const key = `${day}_${meal}_${time}`
-        if (time === hm && !firedKeys.has(key)) {
-          firedKeys.add(key)
-          const n = new Notification(`🔔 Hora do ${MEAL_LABELS[meal]}!`, {
-            body: 'Toque para registrar sua refeição',
-            tag:  `mealreminder_${meal}`,
-          })
-          n.onclick = () => { window.focus(); setActiveTab('hoje'); n.close() }
-        }
-      }
-    }
-    check()
-    const interval = setInterval(check, 30000)
-    return () => clearInterval(interval)
-  }, [remindersEnabled, reminderTimes])
-
   // ── Save ────────────────────────────────────────────────────────────────────
 
   const save = (overrides: Record<string, any> = {}) => {
@@ -573,38 +519,6 @@ export default function Home() {
     await logoutUser()
     localStorage.removeItem('dietUserId')
     // resetState() é chamado pelo onAuthStateChanged automaticamente
-  }
-
-  // ── Ações: Lembretes ────────────────────────────────────────────────────────
-
-  const requestNotifPermission = async (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (typeof Notification === 'undefined') {
-      alert('Notificações não são suportadas neste navegador. No iPhone, tente adicionar o app à Tela de Início e abrir de lá.')
-      return
-    }
-    try {
-      const p = await Notification.requestPermission()
-      setNotifPermission(p)
-      if (p === 'granted') {
-        new Notification('🎉 Lembretes ativados!', { body: 'Você receberá notificações nos horários configurados.' })
-      }
-    } catch {
-      alert('Não foi possível solicitar permissão de notificação neste navegador.')
-    }
-  }
-
-  const toggleReminders = (enabled: boolean) => {
-    setRemindersEnabled(enabled)
-    const stored = localStorage.getItem('reminderSettings')
-    const curr   = stored ? (() => { try { return JSON.parse(stored) } catch { return {} } })() : {}
-    localStorage.setItem('reminderSettings', JSON.stringify({ ...curr, enabled }))
-  }
-
-  const saveReminderSettings = () => {
-    setReminderTimes(reminderDraft)
-    localStorage.setItem('reminderSettings', JSON.stringify({ enabled: remindersEnabled, times: reminderDraft }))
   }
 
   // ── Ações: Relatório ─────────────────────────────────────────────────────────
@@ -1721,102 +1635,6 @@ export default function Home() {
               </div>
             </div>
           )}
-
-          {/* ── Lembretes de Refeição ── */}
-          <div className="card">
-            <div className="card-title">🔔 Lembretes de Refeição</div>
-
-            {(() => {
-              const notifSupported = typeof window !== 'undefined' && 'Notification' in window
-              const isIOS = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent)
-              const isStandalone = typeof window !== 'undefined' && (window.navigator as any).standalone === true
-
-              if (!notifSupported) {
-                if (isIOS && !isStandalone) {
-                  // iOS Safari: Web Notifications não suportadas fora de PWA
-                  return (
-                    <div className="reminder-banner reminder-banner--info">
-                      <span style={{ lineHeight: 1.4 }}>
-                        No iPhone, notificações funcionam apenas como app instalado.{' '}
-                        <strong>Adicione à Tela de Início</strong> (Safari → Compartilhar → Adicionar à Tela de Início) e abra de lá.
-                      </span>
-                    </div>
-                  )
-                }
-                return (
-                  <div className="reminder-banner reminder-banner--denied">
-                    Notificações não suportadas neste navegador.
-                  </div>
-                )
-              }
-
-              if (notifPermission === 'default') {
-                return (
-                  <div className="reminder-banner">
-                    <span>Permita notificações para receber lembretes</span>
-                    <button
-                      className="btn btn-small"
-                      style={{ width:'auto', flexShrink:0 }}
-                      onClick={requestNotifPermission}
-                      onTouchEnd={requestNotifPermission}
-                    >
-                      Permitir
-                    </button>
-                  </div>
-                )
-              }
-
-              if (notifPermission === 'denied') {
-                return (
-                  <div className="reminder-banner reminder-banner--denied">
-                    Notificações bloqueadas. Vá em Configurações do navegador e permita notificações para este site.
-                  </div>
-                )
-              }
-
-              // granted — mostra status positivo
-              return (
-                <div className="reminder-banner reminder-banner--granted">
-                  ✅ Notificações permitidas
-                </div>
-              )
-            })()}
-
-            <div className="reminder-toggle-row">
-              <span style={{ fontSize:14, fontWeight:500 }}>Ativar Lembretes</span>
-              <button
-                className={`toggle-btn ${remindersEnabled ? 'toggle-on' : 'toggle-off'}`}
-                onClick={() => toggleReminders(!remindersEnabled)}
-                disabled={notifPermission === 'denied' || (typeof window !== 'undefined' && !('Notification' in window))}
-              >
-                {remindersEnabled ? 'ON' : 'OFF'}
-              </button>
-            </div>
-
-            <div style={{ marginTop:12 }}>
-              {([
-                { key:'cafe',   label:'Café da Manhã' },
-                { key:'almoco', label:'Almoço'        },
-                { key:'lanche', label:'Lanche'        },
-                { key:'jantar', label:'Jantar'        },
-                { key:'ceia',   label:'Ceia'          },
-              ] as const).map(({ key, label }) => (
-                <div key={key} className="reminder-time-row">
-                  <span className="reminder-time-label">⏰ {label}</span>
-                  <input
-                    type="time"
-                    className="reminder-time-input"
-                    value={reminderDraft[key]}
-                    onChange={e => setReminderDraft(d => ({ ...d, [key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <button className="btn" style={{ marginTop:12 }} onClick={saveReminderSettings}>
-              💾 Salvar Horários
-            </button>
-          </div>
 
           {/* ── Minhas Metas ── */}
           <div className="card">
