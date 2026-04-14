@@ -2135,7 +2135,8 @@ export default function Home() {
         <div className={`tab-content ${activeTab === 'hoje' ? 'active' : ''}`}>
 
           {(() => {
-            const diff     = totalCals - CAL_META
+            // Usa liveDayTotal (mesma fonte que todayFeedback) para garantir mensagens consistentes
+            const diff     = liveDayTotal - CAL_META
             const onTarget = Math.abs(diff) <= 50
             const color    = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : '#e53935'
             const emoji    = onTarget ? '🟢' : diff < 0 ? '🟡' : '🔴'
