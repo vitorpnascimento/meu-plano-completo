@@ -1,5 +1,14 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app'
 import { getDatabase, ref, set, get, Database } from 'firebase/database'
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as fbSignOut,
+  onAuthStateChanged,
+  Auth,
+  User,
+} from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -18,25 +27,56 @@ export function isFirebaseConfigured(): boolean {
   )
 }
 
-let _app: FirebaseApp | null = null
-let _db: Database | null = null
+let _app:  FirebaseApp | null = null
+let _db:   Database    | null = null
+let _auth: Auth        | null = null
 
-function getDb(): Database | null {
-  if (typeof window === 'undefined') return null
-  if (!isFirebaseConfigured()) return null
+function init(): boolean {
+  if (_app) return true
+  if (typeof window === 'undefined') return false
+  if (!isFirebaseConfigured()) return false
   try {
-    if (!_app) {
-      _app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig as any)
-      _db  = getDatabase(_app)
-    }
-    return _db
-  } catch {
-    return null
+    _app  = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig as any)
+    _db   = getDatabase(_app)
+    _auth = getAuth(_app)
+    return true
+  } catch (e) {
+    console.error('[Firebase] init error:', e)
+    return false
   }
 }
 
-/** Remove campos `foto` do weightHistory antes de salvar no Firebase (são base64 grandes) */
-function stripPhotos(data: Record<string, any>): Record<string, any> {
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function createAccount(email: string, password: string) {
+  if (!init() || !_auth) throw new Error('Firebase not configured')
+  return createUserWithEmailAndPassword(_auth, email, password)
+}
+
+export async function loginWithEmail(email: string, password: string) {
+  if (!init() || !_auth) throw new Error('Firebase not configured')
+  return signInWithEmailAndPassword(_auth, email, password)
+}
+
+export async function logoutUser(): Promise<void> {
+  if (!init() || !_auth) return
+  await fbSignOut(_auth)
+}
+
+export function subscribeToAuthState(
+  callback: (user: User | null) => void,
+): () => void {
+  if (!init() || !_auth) {
+    callback(null)
+    return () => {}
+  }
+  return onAuthStateChanged(_auth, callback)
+}
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+/** Remove fotos do weightHistory antes de salvar (base64 é grande demais) */
+export function stripPhotos(data: Record<string, any>): Record<string, any> {
   const wh = data.weightHistory
   if (!wh) return data
   const stripped: Record<string, any> = {}
@@ -51,16 +91,15 @@ function stripPhotos(data: Record<string, any>): Record<string, any> {
   return { ...data, weightHistory: stripped }
 }
 
-/** Salva dados no Firebase (sem fotos). Retorna true se salvou com sucesso. */
-export async function saveToFirebase(
-  syncId: string,
+/** Salva dados em users/{uid}. Retorna true em sucesso. */
+export async function saveUserData(
+  uid: string,
   data: Record<string, any>,
 ): Promise<boolean> {
-  const db = getDb()
-  if (!db || !syncId) return false
+  if (!init() || !_db || !uid) return false
   try {
     const clean = stripPhotos(data)
-    await set(ref(db, `data/${syncId}`), {
+    await set(ref(_db, `users/${uid}`), {
       ...clean,
       lastSync: new Date().toISOString(),
     })
@@ -71,14 +110,13 @@ export async function saveToFirebase(
   }
 }
 
-/** Carrega dados do Firebase. Retorna null se não encontrou ou falhou. */
-export async function loadFromFirebase(
-  syncId: string,
+/** Carrega dados de users/{uid}. Retorna null se não encontrado. */
+export async function loadUserData(
+  uid: string,
 ): Promise<Record<string, any> | null> {
-  const db = getDb()
-  if (!db || !syncId) return null
+  if (!init() || !_db || !uid) return null
   try {
-    const snap = await get(ref(db, `data/${syncId}`))
+    const snap = await get(ref(_db, `users/${uid}`))
     return snap.exists() ? snap.val() : null
   } catch (e) {
     console.error('[Firebase] load error:', e)

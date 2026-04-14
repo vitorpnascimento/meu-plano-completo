@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import type { User } from 'firebase/auth'
 import {
   BarChart, Bar, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -8,9 +9,12 @@ import {
 } from 'recharts'
 import {
   isFirebaseConfigured,
-  saveToFirebase,
-  loadFromFirebase,
+  subscribeToAuthState,
+  logoutUser,
+  saveUserData,
+  loadUserData,
 } from '../lib/firebase'
+import LoginScreen from './components/LoginScreen'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +52,7 @@ type SyncStatus = 'unconfigured' | 'idle' | 'syncing' | 'synced' | 'offline' | '
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 
+/** Cardápio padrão para o Vitor (migração de dados existentes) */
 const DEFAULT_MEALS: Meal[] = [
   { id: 'cafe',   title: 'Café da Manhã', items: [
     { id: 'cafe_ovo',   name: 'Ovo (2 un)',            kcal: 146, p: 13,  c: 1,  f: 9.5 },
@@ -75,6 +80,15 @@ const DEFAULT_MEALS: Meal[] = [
   ]},
 ]
 
+/** Categorias vazias para novo usuário — ele adiciona seus alimentos via Config */
+const NEW_USER_MEALS: Meal[] = [
+  { id: 'cafe',   title: 'Café da Manhã', items: [] },
+  { id: 'almoco', title: 'Almoço',        items: [] },
+  { id: 'lanche', title: 'Lanche',        items: [] },
+  { id: 'jantar', title: 'Jantar',        items: [] },
+  { id: 'ceia',   title: 'Ceia',          items: [] },
+]
+
 const DEFAULT_ALTERNATIVES: Record<string, SubOption[]> = {
   cafe_ovo:       [{ id:'ca1', name:'Iogurte grego (165g)',    kcal:167, p:20,  c:6,  f:4  }, { id:'ca2', name:'Leite + Aveia',          kcal:200, p:9,   c:32, f:4  }],
   cafe_pao:       [{ id:'cp1', name:'Biscoito integral (50g)', kcal:190, p:4,   c:36, f:3  }, { id:'cp2', name:'Bolo integral (50g)',     kcal:155, p:3,   c:30, f:2  }],
@@ -92,7 +106,8 @@ const DEFAULT_ALTERNATIVES: Record<string, SubOption[]> = {
   ceia_aveia:     [{ id:'cv1', name:'Granola (20g)',           kcal:80,  p:2,   c:14, f:2  }, { id:'cv2', name:'Cereal integral (20g)', kcal:72,  p:2,   c:15, f:1  }],
 }
 
-const DEFAULT_GOALS = { cals: 1963, p: 214, c: 161, f: 43 }
+const DEFAULT_GOALS     = { cals: 1963, p: 214, c: 161, f: 43 }
+const NEW_USER_GOALS    = { cals: 2000, p: 150, c: 200, f: 65 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -135,10 +150,6 @@ function getLastNDates(n: number): string[] {
 
 function newId() { return `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
-function genSyncId() {
-  return Math.random().toString(36).slice(2, 10).toUpperCase()
-}
-
 function rawPeso(entry: any): number | null {
   if (entry == null) return null
   const v = typeof entry === 'object' ? entry.peso : entry
@@ -158,7 +169,7 @@ function rawCalorias(entry: any): number | null {
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
 const BLANK_SUB_FORM  = { name: '', kcal: '', p: '', c: '', f: '', targetId: '' }
 
-const SYNC_LABELS: Record<SyncStatus, string> = {
+const SYNC_ICON: Record<SyncStatus, string> = {
   unconfigured: '',
   idle:    '☁️',
   syncing: '⟳',
@@ -168,44 +179,34 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
 }
 
 export default function Home() {
-  // Cardápio dinâmico
-  const [meals,          setMeals]          = useState<Meal[]>(DEFAULT_MEALS)
-  const [alternatives,   setAlternatives]   = useState<Record<string, SubOption[]>>(DEFAULT_ALTERNATIVES)
-  const [activeSubs,     setActiveSubs]     = useState<Record<string, SubOption>>({})
 
-  // Checkboxes (id-based, por data)
-  const [checked,        setChecked]        = useState<Record<string, Record<string, boolean>>>({})
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  const [authUser,    setAuthUser]    = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
 
-  // Stats e peso
-  const [dayStats,       setDayStats]       = useState<Record<string, any>>({})
-  const [weightsData,    setWeightsData]    = useState<Record<string, any>>({})
-  const [weightPhoto,    setWeightPhoto]    = useState('')
-  const [userGoals,      setUserGoals]      = useState(DEFAULT_GOALS)
+  // ── App State ───────────────────────────────────────────────────────────────
+  const [meals,        setMeals]        = useState<Meal[]>(DEFAULT_MEALS)
+  const [alternatives, setAlternatives] = useState<Record<string, SubOption[]>>(DEFAULT_ALTERNATIVES)
+  const [activeSubs,   setActiveSubs]   = useState<Record<string, SubOption>>({})
+  const [checked,      setChecked]      = useState<Record<string, Record<string, boolean>>>({})
+  const [dayStats,     setDayStats]     = useState<Record<string, any>>({})
+  const [weightsData,  setWeightsData]  = useState<Record<string, any>>({})
+  const [weightPhoto,  setWeightPhoto]  = useState('')
+  const [userGoals,    setUserGoals]    = useState(DEFAULT_GOALS)
+  const [syncStatus,   setSyncStatus]   = useState<SyncStatus>('unconfigured')
 
-  // Sincronização Firebase
-  const [syncId,         setSyncId]         = useState('')
-  const [syncStatus,     setSyncStatus]     = useState<SyncStatus>('unconfigured')
-  const [syncIdInput,    setSyncIdInput]    = useState('')
-  const [copiedId,       setCopiedId]       = useState(false)
+  // ── UI State ────────────────────────────────────────────────────────────────
+  const [activeTab,    setActiveTab]    = useState('hoje')
+  const [statsSubTab,  setStatsSubTab]  = useState<'diario'|'semanal'|'mensal'>('diario')
+  const [openAlt,      setOpenAlt]      = useState<string|null>(null)
 
-  // UI
-  const [activeTab,      setActiveTab]      = useState('hoje')
-  const [statsSubTab,    setStatsSubTab]    = useState<'diario'|'semanal'|'mensal'>('diario')
-  const [openAlt,        setOpenAlt]        = useState<string|null>(null)
-
-  // Modal: Dia Finalizado
-  const [showFinalize,   setShowFinalize]   = useState(false)
-  const [finObs,         setFinObs]         = useState('')
-  const [finExtras,      setFinExtras]      = useState('')
-
-  // Modal: Histórico de Peso
+  const [showFinalize,      setShowFinalize]      = useState(false)
+  const [finObs,            setFinObs]            = useState('')
+  const [finExtras,         setFinExtras]         = useState('')
   const [showWeightHistory, setShowWeightHistory] = useState(false)
 
-  // Modal: Editar / Adicionar Item do Cardápio
   const [itemModal, setItemModal] = useState<null|{ mode:'edit'|'add'; mealIdx:number; item?:MealItem }>(null)
   const [itemForm,  setItemForm]  = useState(BLANK_ITEM_FORM)
-
-  // Modal: Adicionar Substituidor
   const [subModal,  setSubModal]  = useState(false)
   const [subForm,   setSubForm]   = useState(BLANK_SUB_FORM)
 
@@ -213,25 +214,24 @@ export default function Home() {
   const CAL_META = userGoals.cals
   const CAL_MAX  = userGoals.cals + 200
 
-  // ── applyData ─────────────────────────────────────────────────────────────
-  // Aplica dados carregados (Firebase ou localStorage) no estado
+  // ── applyData ───────────────────────────────────────────────────────────────
 
   const applyData = useCallback((d: any, localPhotos?: Record<string, any>) => {
-    if (d.meals?.[0]?.items?.[0]?.id) setMeals(d.meals)
-    if (d.alternatives) setAlternatives({ ...DEFAULT_ALTERNATIVES, ...d.alternatives })
-    if (d.activeSubs)   setActiveSubs(d.activeSubs)
-    if (d.checked)      setChecked(d.checked)
-    if (d.dayStats)     setDayStats(d.dayStats)
+    if (Array.isArray(d.meals))   setMeals(d.meals)
+    if (d.alternatives)           setAlternatives({ ...DEFAULT_ALTERNATIVES, ...d.alternatives })
+    if (d.activeSubs)             setActiveSubs(d.activeSubs)
+    if (d.checked)                setChecked(d.checked)
+    if (d.dayStats)               setDayStats(d.dayStats)
+    if (d.userGoals)              setUserGoals(d.userGoals)
 
-    // Peso: mescla dados do Firebase com fotos locais (fotos não vão pro Firebase)
     const wh: Record<string, any> = d.weightHistory || d.weights || {}
     if (localPhotos) {
       const merged: Record<string, any> = {}
       for (const [date, entry] of Object.entries(wh)) {
-        const localFoto = localPhotos[date]?.foto || null
-        merged[date] = localFoto ? { ...(entry as any), foto: localFoto } : entry
+        merged[date] = localPhotos[date]?.foto
+          ? { ...(entry as any), foto: localPhotos[date].foto }
+          : entry
       }
-      // Adiciona entradas locais que o Firebase não tem (casos offline)
       for (const [date, entry] of Object.entries(localPhotos)) {
         if (!merged[date]) merged[date] = entry
       }
@@ -239,55 +239,78 @@ export default function Home() {
     } else {
       setWeightsData(wh)
     }
-
-    if (d.userGoals) setUserGoals(d.userGoals)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load ───────────────────────────────────────────────────────────────────
+  const resetState = useCallback(() => {
+    setMeals(DEFAULT_MEALS)
+    setAlternatives(DEFAULT_ALTERNATIVES)
+    setActiveSubs({})
+    setChecked({})
+    setDayStats({})
+    setWeightsData({})
+    setUserGoals(DEFAULT_GOALS)
+    setSyncStatus('unconfigured')
+  }, [])
+
+  // ── Auth Effect ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    // 1. Obter ou criar syncId
-    let id = localStorage.getItem('dietSyncId') || ''
-    if (!id) {
-      id = genSyncId()
-      localStorage.setItem('dietSyncId', id)
+    if (!isFirebaseConfigured()) {
+      // Sem Firebase: usa localStorage direto, sem auth
+      setAuthLoading(false)
+      const raw = localStorage.getItem('dietAppData')
+      if (raw) {
+        try { applyData(JSON.parse(raw)) } catch {}
+      }
+      return
     }
-    setSyncId(id)
 
-    // Dados locais (usado como fallback e para fotos)
-    const localRaw  = localStorage.getItem('dietAppData')
-    const localData = localRaw ? JSON.parse(localRaw) : null
-    const localWH   = localData?.weightHistory || localData?.weights || {}
+    const unsub = subscribeToAuthState((user) => {
+      if (!user) resetState()
+      setAuthUser(user)
+      setAuthLoading(false)
+    })
+    return unsub
+  }, [applyData, resetState])
 
-    if (isFirebaseConfigured()) {
-      setSyncStatus('syncing')
-      loadFromFirebase(id)
-        .then(fbData => {
-          if (fbData) {
-            // Firebase tem dados → aplica, mas restaura fotos locais
-            applyData(fbData, localWH)
-            setSyncStatus('synced')
-          } else if (localData) {
-            // Firebase vazio, mas local tem dados → aplica local e sobe pro Firebase
-            applyData(localData)
-            setSyncStatus('syncing')
-            saveToFirebase(id, localData).then(ok =>
-              setSyncStatus(ok ? 'synced' : 'offline')
-            )
-          } else {
-            setSyncStatus('idle')
-          }
-        })
-        .catch(() => {
-          // Firebase falhou → usa localStorage
-          if (localData) applyData(localData)
-          setSyncStatus('offline')
-        })
-    } else {
-      if (localData) applyData(localData)
-      setSyncStatus('unconfigured')
-    }
-  }, [applyData])
+  // ── Data Load Effect (dispara quando authUser muda) ─────────────────────────
+
+  useEffect(() => {
+    if (!isFirebaseConfigured() || !authUser) return
+
+    setSyncStatus('syncing')
+
+    // Cache do localStorage (só usa se pertence a este usuário)
+    const savedUserId = localStorage.getItem('dietUserId')
+    const localRaw    = savedUserId === authUser.uid ? localStorage.getItem('dietAppData') : null
+    const localData   = localRaw ? (() => { try { return JSON.parse(localRaw) } catch { return null } })() : null
+    const localWH     = localData?.weightHistory || localData?.weights || {}
+
+    loadUserData(authUser.uid)
+      .then(fbData => {
+        if (fbData) {
+          // Usuário existente: Firebase é autoritativo, restaura fotos locais
+          applyData(fbData, localWH)
+          setSyncStatus('synced')
+        } else if (localData && Object.keys(localData).length > 0) {
+          // Primeiro login neste device: migra localStorage pro Firebase
+          applyData(localData)
+          setSyncStatus('syncing')
+          saveUserData(authUser.uid, localData).then(ok =>
+            setSyncStatus(ok ? 'synced' : 'offline')
+          )
+        } else {
+          // Novo usuário: dados zerados
+          applyData({ meals: NEW_USER_MEALS, userGoals: NEW_USER_GOALS })
+          setSyncStatus('idle')
+        }
+        localStorage.setItem('dietUserId', authUser.uid)
+      })
+      .catch(() => {
+        if (localData) applyData(localData)
+        setSyncStatus('offline')
+      })
+  }, [authUser, applyData])
 
   // Fecha dropdown ao clicar fora
   useEffect(() => {
@@ -297,7 +320,7 @@ export default function Home() {
     return () => document.removeEventListener('click', fn)
   }, [openAlt])
 
-  // ── Save ───────────────────────────────────────────────────────────────────
+  // ── Save ────────────────────────────────────────────────────────────────────
 
   const save = (overrides: Record<string, any> = {}) => {
     const data = {
@@ -307,58 +330,23 @@ export default function Home() {
     }
     localStorage.setItem('dietAppData', JSON.stringify(data))
 
-    if (isFirebaseConfigured()) {
-      const id = localStorage.getItem('dietSyncId')
-      if (id) {
-        setSyncStatus('syncing')
-        saveToFirebase(id, data).then(ok =>
-          setSyncStatus(ok ? 'synced' : 'offline')
-        )
-      }
+    if (isFirebaseConfigured() && authUser) {
+      setSyncStatus('syncing')
+      saveUserData(authUser.uid, data).then(ok =>
+        setSyncStatus(ok ? 'synced' : 'offline')
+      )
     }
   }
 
-  // ── Conectar a novo ID de sync ─────────────────────────────────────────────
+  // ── Ações: Auth ─────────────────────────────────────────────────────────────
 
-  const connectToSyncId = async (newId: string) => {
-    const id = newId.toUpperCase().trim()
-    if (id.length < 4) return
-    localStorage.setItem('dietSyncId', id)
-    setSyncId(id)
-    setSyncStatus('syncing')
-    setSyncIdInput('')
-
-    const localRaw  = localStorage.getItem('dietAppData')
-    const localData = localRaw ? JSON.parse(localRaw) : null
-    const localWH   = localData?.weightHistory || localData?.weights || {}
-
-    try {
-      const fbData = await loadFromFirebase(id)
-      if (fbData) {
-        applyData(fbData, localWH)
-        setSyncStatus('synced')
-      } else {
-        // ID novo sem dados → sobe dados locais
-        if (localData) {
-          const ok = await saveToFirebase(id, localData)
-          setSyncStatus(ok ? 'synced' : 'offline')
-        } else {
-          setSyncStatus('idle')
-        }
-      }
-    } catch {
-      setSyncStatus('error')
-    }
+  const handleLogout = async () => {
+    await logoutUser()
+    localStorage.removeItem('dietUserId')
+    // resetState() é chamado pelo onAuthStateChanged automaticamente
   }
 
-  const copySyncId = () => {
-    navigator.clipboard.writeText(syncId).then(() => {
-      setCopiedId(true)
-      setTimeout(() => setCopiedId(false), 2000)
-    })
-  }
-
-  // ── Ações: Hoje ────────────────────────────────────────────────────────────
+  // ── Ações: Hoje ─────────────────────────────────────────────────────────────
 
   const toggleItem = (itemId: string) => {
     const today = getToday()
@@ -392,7 +380,7 @@ export default function Home() {
     setShowFinalize(false); setFinObs(''); setFinExtras('')
   }
 
-  // ── Ações: Peso ────────────────────────────────────────────────────────────
+  // ── Ações: Peso ─────────────────────────────────────────────────────────────
 
   const addWeight = (weight: string, photo = '') => {
     const today = getToday()
@@ -414,7 +402,7 @@ export default function Home() {
     reader.readAsDataURL(file)
   }
 
-  // ── Ações: Metas ───────────────────────────────────────────────────────────
+  // ── Ações: Metas ────────────────────────────────────────────────────────────
 
   const updateGoal = (key: keyof typeof DEFAULT_GOALS, val: string) => {
     const num = parseInt(val); if (isNaN(num) || num <= 0) return
@@ -424,7 +412,7 @@ export default function Home() {
 
   const resetGoals = () => { setUserGoals(DEFAULT_GOALS); save({ userGoals: DEFAULT_GOALS }) }
 
-  // ── Ações: Cardápio ────────────────────────────────────────────────────────
+  // ── Ações: Cardápio ─────────────────────────────────────────────────────────
 
   const openItemModal = (mode: 'edit'|'add', mealIdx: number, item?: MealItem) => {
     setItemModal({ mode, mealIdx, item })
@@ -451,14 +439,14 @@ export default function Home() {
   }
 
   const deleteMealItem = (mealIdx: number, itemId: string) => {
-    const nm = meals.map((m, mi) => mi !== mealIdx ? m : { ...m, items: m.items.filter(it => it.id !== itemId) })
-    const na = { ...alternatives }; delete na[itemId]
-    const nas = { ...activeSubs };  delete nas[itemId]
+    const nm  = meals.map((m, mi) => mi !== mealIdx ? m : { ...m, items: m.items.filter(it => it.id !== itemId) })
+    const na  = { ...alternatives }; delete na[itemId]
+    const nas = { ...activeSubs };   delete nas[itemId]
     setMeals(nm); setAlternatives(na); setActiveSubs(nas)
     save({ meals: nm, alternatives: na, activeSubs: nas })
   }
 
-  // ── Ações: Substituidores ──────────────────────────────────────────────────
+  // ── Ações: Substituidores ───────────────────────────────────────────────────
 
   const openSubModal = (itemId = '') => {
     setSubForm({ ...BLANK_SUB_FORM, targetId: itemId }); setSubModal(true)
@@ -479,34 +467,31 @@ export default function Home() {
   }
 
   const deleteAlt = (itemId: string, altId: string) => {
-    const na = { ...alternatives, [itemId]: (alternatives[itemId] || []).filter(a => a.id !== altId) }
-    setAlternatives(na)
+    const na  = { ...alternatives, [itemId]: (alternatives[itemId] || []).filter(a => a.id !== altId) }
     const nas = { ...activeSubs }
     if (nas[itemId]?.id === altId) delete nas[itemId]
-    setActiveSubs(nas); save({ alternatives: na, activeSubs: nas })
+    setAlternatives(na); setActiveSubs(nas)
+    save({ alternatives: na, activeSubs: nas })
   }
 
-  // ── Cálculos hoje ──────────────────────────────────────────────────────────
+  // ── Cálculos hoje ───────────────────────────────────────────────────────────
 
   const today        = getToday()
   const todayChecked = checked[today] || {}
   const { cals: totalCals, p: totalP, c: totalC, f: totalF } = calcDayMacros(meals, todayChecked, activeSubs)
-  const mealsCompleted = meals.filter(m => m.items.length > 0 && m.items.every(it => todayChecked[it.id])).length
-  const todayStat      = dayStats[today]
-  const todayFinished  = todayStat?.finalizado || false
-  const todayCalTotal  = todayStat?.caloriasTotal ?? totalCals
-  const todayFeedback  = getFeedback(todayCalTotal, CAL_META, CAL_MAX)
+  const mealsCompleted  = meals.filter(m => m.items.length > 0 && m.items.every(it => todayChecked[it.id])).length
+  const todayStat       = dayStats[today]
+  const todayFinished   = todayStat?.finalizado || false
+  const todayCalTotal   = todayStat?.caloriasTotal ?? totalCals
+  const todayFeedback   = getFeedback(todayCalTotal, CAL_META, CAL_MAX)
 
-  // ── Histórico de peso ──────────────────────────────────────────────────────
+  // ── Histórico de peso ───────────────────────────────────────────────────────
 
   const weightHistoryAsc = Object.entries(weightsData as Record<string, any>)
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([date, entry]) => ({
-      date,
-      label:    dateLabel(date),
-      peso:     rawPeso(entry),
-      foto:     rawFoto(entry),
-      calorias: rawCalorias(entry),
+      date, label: dateLabel(date),
+      peso: rawPeso(entry), foto: rawFoto(entry), calorias: rawCalorias(entry),
     }))
     .filter(e => e.peso !== null) as { date:string; label:string; peso:number; foto:string|null; calorias:number|null }[]
 
@@ -519,22 +504,20 @@ export default function Home() {
   const firstW    = weightHistoryAsc[0]?.peso ?? null
   const lastW     = weightHistoryAsc[weightHistoryAsc.length - 1]?.peso ?? null
   const totalLoss = firstW !== null && lastW !== null ? +((firstW - lastW).toFixed(1)) : null
-
   const daysBetween = weightHistoryAsc.length > 1
     ? (new Date(weightHistoryAsc[weightHistoryAsc.length-1].date).getTime() - new Date(weightHistoryAsc[0].date).getTime()) / (1000 * 60 * 60 * 24)
     : 0
   const weeklyAvg = daysBetween > 0 && totalLoss !== null
-    ? +((totalLoss / daysBetween) * 7).toFixed(2)
-    : null
+    ? +((totalLoss / daysBetween) * 7).toFixed(2) : null
 
-  // ── Estatísticas ───────────────────────────────────────────────────────────
+  // ── Estatísticas ────────────────────────────────────────────────────────────
 
   const weekDates  = getLastNDates(7)
   const monthDates = getLastNDates(30)
 
   const weeklyChartData = weekDates.map(d => ({
     label: dateLabel(d),
-    cals:  calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0),
+    cals: calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0),
   }))
 
   const monthlyChartData = (() => {
@@ -551,10 +534,10 @@ export default function Home() {
     return out
   })()
 
-  const weekFin       = weekDates.filter(d => dayStats[d]?.finalizado).length
-  const weekTotal     = weeklyChartData.reduce((s, d) => s + d.cals, 0)
-  const weekMeta      = CAL_META * 7
-  const weekDiff      = weekTotal - weekMeta
+  const weekFin   = weekDates.filter(d => dayStats[d]?.finalizado).length
+  const weekTotal = weeklyChartData.reduce((s, d) => s + d.cals, 0)
+  const weekMeta  = CAL_META * 7
+  const weekDiff  = weekTotal - weekMeta
 
   const weekWeightData = weekDates
     .map(d => ({ label: dateLabel(d), peso: rawPeso(weightsData[d]) }))
@@ -568,11 +551,7 @@ export default function Home() {
     .map(d => {
       const peso = rawPeso(weightsData[d])
       const cals = calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0)
-      return {
-        label: dateLabel(d),
-        peso:  peso ?? undefined,
-        cals:  cals > 0 ? cals : undefined,
-      }
+      return { label: dateLabel(d), peso: peso ?? undefined, cals: cals > 0 ? cals : undefined }
     })
     .filter(d => d.peso !== undefined || d.cals !== undefined)
 
@@ -587,7 +566,22 @@ export default function Home() {
 
   const firebaseConfigured = isFirebaseConfigured()
 
-  // ── JSX ────────────────────────────────────────────────────────────────────
+  // ── Telas de loading / login ─────────────────────────────────────────────────
+
+  if (authLoading) {
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-logo">💪</div>
+        <div className="auth-loading-text">Carregando...</div>
+      </div>
+    )
+  }
+
+  if (firebaseConfigured && !authUser) {
+    return <LoginScreen />
+  }
+
+  // ── JSX principal ────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -625,10 +619,8 @@ export default function Home() {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
                     <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
-                    <Tooltip
-                      contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
-                      formatter={(v: any) => [`${v}kg`, 'Peso']}
-                    />
+                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
+                      formatter={(v: any) => [`${v}kg`, 'Peso']} />
                     <Line type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', r: 3 }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -638,9 +630,7 @@ export default function Home() {
             {weightHistoryAsc.length > 0 ? (
               <div style={{ overflowX: 'auto', marginBottom: 16 }}>
                 <table className="wh-table">
-                  <thead>
-                    <tr><th>Data</th><th>Peso</th><th>Foto</th><th>Diferença</th></tr>
-                  </thead>
+                  <thead><tr><th>Data</th><th>Peso</th><th>Foto</th><th>Diferença</th></tr></thead>
                   <tbody>
                     {weightHistoryDesc.map((e, i) => {
                       const prev = weightHistoryDesc[i + 1]
@@ -649,21 +639,10 @@ export default function Home() {
                         <tr key={e.date}>
                           <td>{new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
                           <td style={{ fontWeight: 600, color: 'var(--primary)' }}>{e.peso}kg</td>
-                          <td>
-                            {e.foto
-                              ? <img src={e.foto} alt="" className="wh-thumb" />
-                              : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>
-                            }
-                          </td>
-                          <td style={{
-                            fontWeight: 500, fontSize: 13,
-                            color: diff === null ? 'var(--text-secondary)'
-                              : diff < 0 ? 'var(--success)'
-                              : diff > 0 ? 'var(--warning)'
-                              : 'var(--text-secondary)',
-                          }}>
-                            {diff === null ? '—'
-                              : `${diff > 0 ? '+' : ''}${diff}kg ${diff < 0 ? '✅' : diff > 0 ? '📈' : ''}`}
+                          <td>{e.foto ? <img src={e.foto} alt="" className="wh-thumb" /> : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>}</td>
+                          <td style={{ fontWeight: 500, fontSize: 13,
+                            color: diff === null ? 'var(--text-secondary)' : diff < 0 ? 'var(--success)' : diff > 0 ? 'var(--warning)' : 'var(--text-secondary)' }}>
+                            {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}kg ${diff < 0 ? '✅' : diff > 0 ? '📈' : ''}`}
                           </td>
                         </tr>
                       )
@@ -673,10 +652,9 @@ export default function Home() {
               </div>
             ) : (
               <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>
-                Nenhum registro ainda. Registre seu peso na aba Peso!
+                Nenhum registro ainda.
               </div>
             )}
-
             <button className="btn" onClick={() => setShowWeightHistory(false)}>Fechar</button>
           </div>
         </div>
@@ -783,7 +761,7 @@ export default function Home() {
             </div>
             {firebaseConfigured && syncStatus !== 'unconfigured' && (
               <div className={`sync-badge sync-badge--${syncStatus}`}>
-                {SYNC_LABELS[syncStatus]}
+                {SYNC_ICON[syncStatus]}
               </div>
             )}
           </div>
@@ -856,12 +834,28 @@ export default function Home() {
             </div>
           </div>
 
-          {meals.map(meal => (
+          {meals.length === 0 || meals.every(m => m.items.length === 0) ? (
+            <div className="card" style={{ textAlign: 'center', padding: '32px 16px' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🍽️</div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Cardápio vazio</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Adicione seus alimentos na aba Config → Meu Cardápio
+              </div>
+              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
+                onClick={() => setActiveTab('config')}>
+                Ir para Configurações
+              </button>
+            </div>
+          ) : meals.map(meal => (
             <div key={meal.id} className="card">
               <div className="card-title">
                 {meal.title} · ~{meal.items.reduce((s, it) => s + it.kcal, 0)} kcal
               </div>
-              {meal.items.map(item => {
+              {meal.items.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                  Nenhum alimento — adicione em Config
+                </div>
+              ) : meal.items.map(item => {
                 const subActive = activeSubs[item.id]
                 const display   = subActive || item
                 const alts      = alternatives[item.id] || []
@@ -917,9 +911,7 @@ export default function Home() {
               </div>
               <div className="today-weight-value">{todayWeight}</div>
               <div className="today-weight-unit">kg</div>
-              {todayWeightFoto && (
-                <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" />
-              )}
+              {todayWeightFoto && <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" />}
               <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
                 onClick={() => setShowWeightHistory(true)}>
                 📊 Ver Histórico Completo
@@ -965,13 +957,11 @@ export default function Home() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                 <div className="card-title" style={{ marginBottom: 0 }}>📈 Seu Progresso</div>
                 {weightHistoryAsc.length > 0 && (
-                  <button className="btn btn-small" style={{ width: 'auto' }}
-                    onClick={() => setShowWeightHistory(true)}>
+                  <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => setShowWeightHistory(true)}>
                     Ver Histórico
                   </button>
                 )}
               </div>
-
               {dualChartData.length >= 2 ? (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 4 }}>
@@ -982,16 +972,12 @@ export default function Home() {
                     <ComposedChart data={dualChartData} margin={{ top: 8, right: 50, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
-                      <YAxis yAxisId="peso" orientation="left"  domain={['auto', 'auto']} tick={{ fill: 'var(--primary)', fontSize: 10 }} />
-                      <YAxis yAxisId="cals" orientation="right" domain={[0, 'auto']}      tick={{ fill: 'var(--success)', fontSize: 10 }} />
-                      <Tooltip
-                        contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
-                        formatter={(v: any, name: string) => name === 'peso' ? [`${v}kg`, 'Peso'] : [`${v}kcal`, 'Calorias']}
-                      />
-                      <Line yAxisId="peso" type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2}
-                        dot={{ fill: 'var(--primary)', r: 3 }} name="peso" connectNulls />
-                      <Line yAxisId="cals" type="monotone" dataKey="cals" stroke="var(--success)" strokeWidth={2}
-                        dot={{ fill: 'var(--success)', r: 3 }} name="cals" connectNulls />
+                      <YAxis yAxisId="peso" orientation="left"  domain={['auto','auto']} tick={{ fill: 'var(--primary)', fontSize: 10 }} />
+                      <YAxis yAxisId="cals" orientation="right" domain={[0,'auto']}      tick={{ fill: 'var(--success)', fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
+                        formatter={(v: any, name: string) => name === 'peso' ? [`${v}kg`, 'Peso'] : [`${v}kcal`, 'Calorias']} />
+                      <Line yAxisId="peso" type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', r: 3 }} name="peso" connectNulls />
+                      <Line yAxisId="cals" type="monotone" dataKey="cals" stroke="var(--success)" strokeWidth={2} dot={{ fill: 'var(--success)', r: 3 }} name="cals" connectNulls />
                     </ComposedChart>
                   </ResponsiveContainer>
                 </div>
@@ -1000,22 +986,15 @@ export default function Home() {
                   Registre peso em pelo menos 2 dias para ver o gráfico.
                 </div>
               )}
-
               <div>
                 {totalLoss !== null && totalLoss > 0 && (
-                  <div className="insight-item">
-                    🏆 Você perdeu <strong>{totalLoss}kg</strong> desde o início ({weightHistoryAsc.length} registros)
-                  </div>
+                  <div className="insight-item">🏆 Você perdeu <strong>{totalLoss}kg</strong> desde o início ({weightHistoryAsc.length} registros)</div>
                 )}
                 {totalLoss !== null && totalLoss < 0 && (
-                  <div className="insight-item">
-                    📈 Ganhou <strong>{Math.abs(totalLoss)}kg</strong> desde o início — ajuste a dieta se necessário
-                  </div>
+                  <div className="insight-item">📈 Ganhou <strong>{Math.abs(totalLoss)}kg</strong> desde o início — ajuste a dieta se necessário</div>
                 )}
                 {weeklyAvg !== null && weeklyAvg > 0 && (
-                  <div className="insight-item">
-                    📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong>{weeklyAvg >= 0.3 && weeklyAvg <= 1 ? ' ✅ bom ritmo!' : weeklyAvg > 1 ? ' ⚠️ ritmo muito alto' : ''}
-                  </div>
+                  <div className="insight-item">📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong>{weeklyAvg >= 0.3 && weeklyAvg <= 1 ? ' ✅ bom ritmo!' : weeklyAvg > 1 ? ' ⚠️ ritmo muito alto' : ''}</div>
                 )}
                 {(() => {
                   const lastEntry = weightHistoryAsc[weightHistoryAsc.length - 1]
@@ -1023,19 +1002,12 @@ export default function Home() {
                   const diff = CAL_META - lastEntry.calorias
                   return (
                     <div className="insight-item">
-                      {diff > 100
-                        ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer mais`
-                        : diff < -100
-                        ? `🔴 Calorias: ${Math.abs(diff)} kcal acima da meta no último registro`
+                      {diff > 100 ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer mais`
+                        : diff < -100 ? `🔴 Calorias: ${Math.abs(diff)} kcal acima da meta no último registro`
                         : `🟢 Calorias dentro da meta no último registro`}
                     </div>
                   )
                 })()}
-                {weightHistoryAsc.length === 0 && (
-                  <div className="insight-item" style={{ color: 'var(--text-secondary)' }}>
-                    Registre seu peso na aba Peso para ver insights aqui.
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -1222,87 +1194,41 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ CONFIG */}
         <div className={`tab-content ${activeTab === 'config' ? 'active' : ''}`}>
 
-          {/* ── Sincronização em Nuvem ── */}
-          <div className="card">
-            <div className="card-title">☁️ Sincronização em Nuvem</div>
-
-            {!firebaseConfigured ? (
-              <div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12, lineHeight: 1.6 }}>
-                  Firebase não configurado. Para ativar a sincronização entre dispositivos, adicione as variáveis de ambiente do Firebase.
-                </div>
-                <div className="sync-code-block">
-                  NEXT_PUBLIC_FIREBASE_API_KEY=...<br/>
-                  NEXT_PUBLIC_FIREBASE_DATABASE_URL=...<br/>
-                  NEXT_PUBLIC_FIREBASE_PROJECT_ID=...
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
-                  Crie um projeto gratuito em firebase.google.com → Realtime Database → copie a config para o Vercel em Settings › Environment Variables.
-                </div>
-              </div>
-            ) : (
-              <div>
-                {/* Status */}
-                <div className="sync-status-row">
-                  <span>Status:</span>
-                  <span className={`sync-status-val sync-status-val--${syncStatus}`}>
-                    {syncStatus === 'synced'  && '✅ Sincronizado'}
-                    {syncStatus === 'syncing' && '⟳ Sincronizando...'}
-                    {syncStatus === 'offline' && '📵 Offline (dados salvos localmente)'}
-                    {syncStatus === 'error'   && '⚠️ Erro de sincronização'}
-                    {syncStatus === 'idle'    && '☁️ Aguardando'}
-                  </span>
-                </div>
-
-                {/* Meu ID */}
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Meu ID de Sincronização
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <code className="sync-id-display">{syncId}</code>
-                    <button className="btn btn-small" style={{ width: 'auto', flexShrink: 0 }} onClick={copySyncId}>
-                      {copiedId ? '✅ Copiado!' : 'Copiar'}
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 6 }}>
-                    Compartilhe este ID com seus outros dispositivos para sincronizar os dados.
-                  </div>
-                </div>
-
-                {/* Conectar a outro ID */}
+          {/* ── Conta ── */}
+          {firebaseConfigured && authUser && (
+            <div className="card">
+              <div className="card-title">👤 Minha Conta</div>
+              <div className="account-row">
                 <div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Usar ID de outro dispositivo
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input
-                      type="text"
-                      className="modal-input"
-                      style={{ marginBottom: 0, textTransform: 'uppercase', letterSpacing: 2, fontFamily: 'monospace' }}
-                      placeholder="Cole o ID aqui (ex: K7M2X9P1)"
-                      maxLength={12}
-                      value={syncIdInput}
-                      onChange={e => setSyncIdInput(e.target.value.toUpperCase())}
-                    />
-                    <button
-                      className="btn btn-small"
-                      style={{ width: 'auto', flexShrink: 0 }}
-                      disabled={syncIdInput.length < 4}
-                      onClick={() => connectToSyncId(syncIdInput)}
-                    >
-                      Conectar
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--warning)', marginTop: 6 }}>
-                    ⚠️ Ao conectar, os dados deste dispositivo serão substituídos pelos dados do ID informado.
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser.email}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    {syncStatus === 'synced'  && '☁️ Sincronizado'}
+                    {syncStatus === 'syncing' && '⟳ Sincronizando...'}
+                    {syncStatus === 'offline' && '📵 Offline — dados salvos localmente'}
+                    {syncStatus === 'idle'    && '☁️ Conectado'}
                   </div>
                 </div>
+                <button className="btn btn-small warning" style={{ width: 'auto' }} onClick={handleLogout}>
+                  Sair
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Minhas Metas */}
+          {/* ── Firebase Rules (info) ── */}
+          {firebaseConfigured && authUser && (
+            <div className="card">
+              <div className="card-title">🔒 Segurança Firebase</div>
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>
+                Configure as regras abaixo no Firebase Console → Realtime Database → Rules para garantir que cada usuário só acesse seus próprios dados:
+              </div>
+              <div className="sync-code-block">
+                {`{\n  "rules": {\n    "users": {\n      "$uid": {\n        ".read":  "auth != null && auth.uid == $uid",\n        ".write": "auth != null && auth.uid == $uid"\n      }\n    }\n  }\n}`}
+              </div>
+            </div>
+          )}
+
+          {/* ── Minhas Metas ── */}
           <div className="card">
             <div className="card-title">Minhas Metas</div>
             <div className="config-goals">
@@ -1321,7 +1247,7 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Gerenciar Substituidores */}
+          {/* ── Gerenciar Substituidores ── */}
           <div className="card">
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
               <div className="card-title" style={{ marginBottom:0 }}>Gerenciar Substituidores</div>
@@ -1352,7 +1278,7 @@ export default function Home() {
             }))}
           </div>
 
-          {/* Meu Cardápio */}
+          {/* ── Meu Cardápio ── */}
           <div className="card">
             <div className="card-title">Meu Cardápio</div>
             {meals.map((meal, mealIdx) => (
