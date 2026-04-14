@@ -48,7 +48,30 @@ interface WeightEntry {
   calorias?: number
 }
 
-type SyncStatus = 'unconfigured' | 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
+type SyncStatus  = 'unconfigured' | 'idle' | 'syncing' | 'synced' | 'offline' | 'error'
+type ReportPeriod = 'daily' | 'weekly' | 'monthly' | '3m' | '6m'
+
+interface ReportData {
+  periodLabel:  string
+  dateRange:    string
+  dates:        string[]
+  finalizados:  number
+  daysWithCals: number
+  totalCals:    number
+  avgCals:      number
+  avgP:         number
+  avgC:         number
+  avgF:         number
+  firstW:       number | null
+  lastW:        number | null
+  weightDiff:   number | null
+  weeklyTrend:  number | null
+  calChart:     { label: string; cals: number }[]
+  pesoChart:    { label: string; peso: number }[]
+  macroChart:   { name: string; consumido: number; meta: number }[]
+  insights:     string[]
+  generatedAt:  string
+}
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -164,6 +187,112 @@ function rawCalorias(entry: any): number | null {
   return entry && typeof entry === 'object' ? (entry.calorias || null) : null
 }
 
+// ─── Relatório: helpers ────────────────────────────────────────────────────────
+
+function getReportDates(period: ReportPeriod, anchor: string): string[] {
+  const d = new Date(anchor + 'T12:00:00')
+  if (period === 'daily') return [anchor]
+  if (period === 'weekly') {
+    const dow = d.getDay()
+    const mon = new Date(d); mon.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1))
+    return Array.from({ length: 7 }, (_, i) => {
+      const x = new Date(mon); x.setDate(mon.getDate() + i); return x.toISOString().split('T')[0]
+    })
+  }
+  if (period === 'monthly') {
+    const y = d.getFullYear(), m = d.getMonth()
+    return Array.from({ length: new Date(y, m + 1, 0).getDate() }, (_, i) =>
+      new Date(y, m, i + 1).toISOString().split('T')[0]
+    )
+  }
+  const n = period === '3m' ? 90 : 180
+  const end = new Date(anchor + 'T12:00:00')
+  return Array.from({ length: n }, (_, i) => {
+    const x = new Date(end); x.setDate(end.getDate() - (n - 1 - i)); return x.toISOString().split('T')[0]
+  })
+}
+
+function buildReport(
+  period:     ReportPeriod,
+  anchor:     string,
+  meals:      Meal[],
+  checked:    Record<string, Record<string, boolean>>,
+  activeSubs: Record<string, SubOption>,
+  dayStats:   Record<string, any>,
+  weights:    Record<string, any>,
+  goals:      { cals: number; p: number; c: number; f: number },
+): ReportData {
+  const dates     = getReportDates(period, anchor)
+  const fmt       = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' })
+  const dateRange = period === 'daily' ? fmt(dates[0]) : `${fmt(dates[0])} – ${fmt(dates[dates.length - 1])}`
+
+  const daily = dates.map(d => {
+    const m = calcDayMacros(meals, checked[d] || {}, activeSubs)
+    return {
+      date: d, ...m,
+      calsTotal: m.cals + (dayStats[d]?.caloriasExtras || 0),
+      finalized: !!(dayStats[d]?.finalizado),
+      peso:      rawPeso(weights[d]),
+    }
+  })
+
+  const finalizados  = daily.filter(r => r.finalized).length
+  const daysWithCals = daily.filter(r => r.calsTotal > 0).length
+  const totalCals    = daily.reduce((s, r) => s + r.calsTotal, 0)
+  const n            = dates.length || 1
+  const avgCals      = Math.round(totalCals / n)
+  const avgP         = Math.round(daily.reduce((s, r) => s + r.p, 0) / n)
+  const avgC         = Math.round(daily.reduce((s, r) => s + r.c, 0) / n)
+  const avgF         = Math.round(daily.reduce((s, r) => s + r.f, 0) / n)
+
+  const wEntries   = daily.filter(r => r.peso !== null) as (typeof daily[0] & { peso: number })[]
+  const firstW     = wEntries[0]?.peso ?? null
+  const lastW      = wEntries[wEntries.length - 1]?.peso ?? null
+  const weightDiff = firstW !== null && lastW !== null ? +((lastW - firstW).toFixed(1)) : null
+  const daySpan    = wEntries.length > 1
+    ? (new Date(wEntries[wEntries.length-1].date).getTime() - new Date(wEntries[0].date).getTime()) / 86400000 : 0
+  const weeklyTrend = daySpan > 0 && weightDiff !== null ? +((weightDiff / daySpan) * 7).toFixed(2) : null
+
+  const step      = n > 60 ? Math.ceil(n / 60) : 1
+  const calChart  = daily.filter((_, i) => i % step === 0).map(r => ({ label: dateLabel(r.date), cals: r.calsTotal }))
+  const pesoChart = wEntries.map(r => ({ label: dateLabel(r.date), peso: r.peso }))
+  const macroChart = [
+    { name: 'P (Prot)', consumido: avgP, meta: goals.p },
+    { name: 'C (Carb)', consumido: avgC, meta: goals.c },
+    { name: 'G (Gord)', consumido: avgF, meta: goals.f },
+  ]
+
+  const insights: string[] = []
+  const pct = Math.round((finalizados / n) * 100)
+  if      (pct >= 80) insights.push(`${pct}% de adesão — excelente! 🎯`)
+  else if (pct >= 50) insights.push(`${pct}% de adesão — bom progresso, pode melhorar 👍`)
+  else if (n   >   1) insights.push(`${pct}% de adesão — foco nos próximos dias 💪`)
+
+  const margin = avgCals - goals.cals
+  if (Math.abs(margin) <= 150)  insights.push(`Média calórica: ${avgCals} kcal/dia (${margin >= 0 ? '+' : ''}${margin} da meta) ✅`)
+  else if (margin < 0)          insights.push(`Média calórica baixa: ${avgCals} kcal/dia — tente consumir mais ⚠️`)
+  else                          insights.push(`Média calórica alta: ${avgCals} kcal/dia (+${margin} kcal acima da meta)`)
+
+  if (weightDiff !== null) {
+    if      (weightDiff < 0) insights.push(`Perdeu ${Math.abs(weightDiff)}kg no período 🏆`)
+    else if (weightDiff > 0) insights.push(`Ganhou ${weightDiff}kg no período 📈`)
+    else                     insights.push(`Peso estável no período ➡️`)
+    if (weeklyTrend !== null && dates.length >= 7)
+      insights.push(`Tendência: ${weeklyTrend > 0 ? '+' : ''}${weeklyTrend}kg/semana`)
+  }
+  if (avgP >= goals.p) insights.push(`Proteína em dia: ${avgP}g/dia (meta ${goals.p}g) 💪`)
+  else                 insights.push(`Proteína abaixo: ${avgP}g/dia — faltou ${goals.p - avgP}g/dia`)
+
+  const LABELS: Record<ReportPeriod, string> = { daily:'Diário', weekly:'Semanal', monthly:'Mensal', '3m':'3 Meses', '6m':'6 Meses' }
+  return {
+    periodLabel: LABELS[period], dateRange, dates,
+    finalizados, daysWithCals, totalCals, avgCals, avgP, avgC, avgF,
+    firstW, lastW, weightDiff, weeklyTrend,
+    calChart, pesoChart, macroChart, insights,
+    generatedAt: new Date().toLocaleString('pt-BR'),
+  }
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
@@ -209,6 +338,20 @@ export default function Home() {
   const [itemForm,  setItemForm]  = useState(BLANK_ITEM_FORM)
   const [subModal,  setSubModal]  = useState(false)
   const [subForm,   setSubForm]   = useState(BLANK_SUB_FORM)
+
+  // ── Lembretes ───────────────────────────────────────────────────────────────
+  const DEFAULT_REMINDER_TIMES = { cafe:'07:00', almoco:'12:00', lanche:'15:00', jantar:'19:00', ceia:'21:00' }
+  const [remindersEnabled, setRemindersEnabled] = useState(false)
+  const [reminderTimes,    setReminderTimes]    = useState(DEFAULT_REMINDER_TIMES)
+  const [reminderDraft,    setReminderDraft]    = useState(DEFAULT_REMINDER_TIMES)
+  const [notifPermission,  setNotifPermission]  = useState<NotificationPermission>('default')
+
+  // ── Relatório ────────────────────────────────────────────────────────────────
+  const [showReport,    setShowReport]    = useState(false)
+  const [reportPeriod,  setReportPeriod]  = useState<ReportPeriod>('weekly')
+  const [reportAnchor,  setReportAnchor]  = useState(new Date().toISOString().split('T')[0])
+  const [reportResult,  setReportResult]  = useState<ReportData | null>(null)
+  const [reportStep,    setReportStep]    = useState<'select'|'view'>('select')
 
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
@@ -359,6 +502,53 @@ export default function Home() {
     return () => document.removeEventListener('click', fn)
   }, [openAlt])
 
+  // ── Carrega configurações de lembrete do localStorage ──────────────────────
+  useEffect(() => {
+    const raw = localStorage.getItem('reminderSettings')
+    if (raw) {
+      try {
+        const s = JSON.parse(raw)
+        if (typeof s.enabled === 'boolean') setRemindersEnabled(s.enabled)
+        if (s.times && typeof s.times === 'object') {
+          setReminderTimes(t => ({ ...t, ...s.times }))
+          setReminderDraft(t => ({ ...t, ...s.times }))
+        }
+      } catch {}
+    }
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setNotifPermission(Notification.permission)
+    }
+  }, [])
+
+  // ── Intervalo de verificação de lembretes ──────────────────────────────────
+  useEffect(() => {
+    if (!remindersEnabled) return
+    const firedKeys = new Set<string>()
+    const MEAL_LABELS: Record<string, string> = {
+      cafe:'Café da Manhã', almoco:'Almoço', lanche:'Lanche', jantar:'Jantar', ceia:'Ceia',
+    }
+    const check = () => {
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+      const now = new Date()
+      const hm  = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+      const day = now.toISOString().split('T')[0]
+      for (const [meal, time] of Object.entries(reminderTimes)) {
+        const key = `${day}_${meal}_${time}`
+        if (time === hm && !firedKeys.has(key)) {
+          firedKeys.add(key)
+          const n = new Notification(`🔔 Hora do ${MEAL_LABELS[meal]}!`, {
+            body: 'Toque para registrar sua refeição',
+            tag:  `mealreminder_${meal}`,
+          })
+          n.onclick = () => { window.focus(); setActiveTab('hoje'); n.close() }
+        }
+      }
+    }
+    check()
+    const interval = setInterval(check, 30000)
+    return () => clearInterval(interval)
+  }, [remindersEnabled, reminderTimes])
+
   // ── Save ────────────────────────────────────────────────────────────────────
 
   const save = (overrides: Record<string, any> = {}) => {
@@ -383,6 +573,64 @@ export default function Home() {
     await logoutUser()
     localStorage.removeItem('dietUserId')
     // resetState() é chamado pelo onAuthStateChanged automaticamente
+  }
+
+  // ── Ações: Lembretes ────────────────────────────────────────────────────────
+
+  const requestNotifPermission = async () => {
+    if (typeof Notification === 'undefined') return
+    const p = await Notification.requestPermission()
+    setNotifPermission(p)
+  }
+
+  const toggleReminders = (enabled: boolean) => {
+    setRemindersEnabled(enabled)
+    const stored = localStorage.getItem('reminderSettings')
+    const curr   = stored ? (() => { try { return JSON.parse(stored) } catch { return {} } })() : {}
+    localStorage.setItem('reminderSettings', JSON.stringify({ ...curr, enabled }))
+  }
+
+  const saveReminderSettings = () => {
+    setReminderTimes(reminderDraft)
+    localStorage.setItem('reminderSettings', JSON.stringify({ enabled: remindersEnabled, times: reminderDraft }))
+  }
+
+  // ── Ações: Relatório ─────────────────────────────────────────────────────────
+
+  const generateReport = () => {
+    const r = buildReport(reportPeriod, reportAnchor, meals, checked, activeSubs, dayStats, weightsData, userGoals)
+    setReportResult(r)
+    setReportStep('view')
+  }
+
+  const copyReportToClipboard = () => {
+    if (!reportResult) return
+    const r   = reportResult
+    const pct = Math.round((r.finalizados / r.dates.length) * 100)
+    const lines = [
+      `MEU PLANO — RELATÓRIO ${r.periodLabel.toUpperCase()}`,
+      `Período: ${r.dateRange}`,
+      ``,
+      `RESUMO GERAL`,
+      `Dias cumpridos: ${r.finalizados}/${r.dates.length} (${pct}%)`,
+      `Calorias totais: ${r.totalCals.toLocaleString('pt-BR')} kcal`,
+      `Média diária: ${r.avgCals} kcal (meta: ${userGoals.cals})`,
+      ``,
+      `MACROS (média/dia)`,
+      `Proteína: ${r.avgP}g | Carboidrato: ${r.avgC}g | Gordura: ${r.avgF}g`,
+      ...(r.firstW !== null ? [
+        ``,
+        `PESO`,
+        `${r.firstW}kg → ${r.lastW}kg (${r.weightDiff! >= 0 ? '+' : ''}${r.weightDiff}kg)`,
+        ...(r.weeklyTrend !== null ? [`Tendência: ${r.weeklyTrend > 0 ? '+' : ''}${r.weeklyTrend}kg/semana`] : []),
+      ] : []),
+      ``,
+      `INSIGHTS`,
+      ...r.insights.map(i => `• ${i}`),
+      ``,
+      `Gerado em ${r.generatedAt} · Meu Plano`,
+    ]
+    navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
   }
 
   // ── Ações: Hoje ─────────────────────────────────────────────────────────────
@@ -790,6 +1038,194 @@ export default function Home() {
         </div>
       )}
 
+      {/* ══ Modal / View: Relatório ══ */}
+      {showReport && (
+        <div
+          className="modal-overlay report-overlay"
+          onClick={reportStep === 'select' ? () => setShowReport(false) : undefined}
+        >
+          {reportStep === 'select' ? (
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <div className="modal-title">📄 Gerar Relatório</div>
+
+              <label className="modal-label">Período</label>
+              <select className="modal-input" value={reportPeriod}
+                onChange={e => setReportPeriod(e.target.value as ReportPeriod)}>
+                <option value="daily">Diário</option>
+                <option value="weekly">Semanal</option>
+                <option value="monthly">Mensal</option>
+                <option value="3m">3 Meses</option>
+                <option value="6m">6 Meses</option>
+              </select>
+
+              <label className="modal-label">
+                {reportPeriod === 'daily'   ? 'Data específica' :
+                 reportPeriod === 'weekly'  ? 'Qualquer dia da semana' :
+                 reportPeriod === 'monthly' ? 'Qualquer dia do mês' :
+                 'Data final do período'}
+              </label>
+              <input type="date" className="modal-input" value={reportAnchor}
+                max={getToday()} onChange={e => setReportAnchor(e.target.value)} />
+
+              {reportPeriod !== 'daily' && (() => {
+                const ds  = getReportDates(reportPeriod, reportAnchor)
+                const fmt = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' })
+                return (
+                  <div className="report-range-preview">
+                    📅 {fmt(ds[0])} → {fmt(ds[ds.length - 1])} ({ds.length} dias)
+                  </div>
+                )
+              })()}
+
+              <div className="modal-actions">
+                <button className="btn" onClick={generateReport}>Gerar Relatório</button>
+                <button className="btn btn-cancel" onClick={() => setShowReport(false)}>Cancelar</button>
+              </div>
+            </div>
+
+          ) : reportResult && (
+            <div className="report-view" onClick={e => e.stopPropagation()}>
+
+              {/* Header do relatório */}
+              <div className="report-header">
+                <div>
+                  <div className="report-title">💪 Meu Plano — Relatório {reportResult.periodLabel}</div>
+                  <div className="report-subtitle">Período: {reportResult.dateRange}</div>
+                </div>
+                <button className="report-close-btn" onClick={() => setShowReport(false)}>✕</button>
+              </div>
+
+              <div className="report-body">
+
+                {/* Seção 1: Resumo */}
+                <div className="report-section">
+                  <div className="report-section-title">📊 Resumo Geral</div>
+                  <div className="report-grid">
+                    <div className="report-stat">
+                      <div className="report-stat-val">{reportResult.finalizados}/{reportResult.dates.length}</div>
+                      <div className="report-stat-label">Dias cumpridos</div>
+                      <div className="report-stat-sub">{Math.round(reportResult.finalizados / reportResult.dates.length * 100)}%</div>
+                    </div>
+                    <div className="report-stat">
+                      <div className="report-stat-val">{reportResult.avgCals}</div>
+                      <div className="report-stat-label">Média kcal/dia</div>
+                      <div className="report-stat-sub">Meta: {userGoals.cals}</div>
+                    </div>
+                    <div className="report-stat">
+                      <div className="report-stat-val">{reportResult.totalCals.toLocaleString('pt-BR')}</div>
+                      <div className="report-stat-label">Total kcal</div>
+                      <div className="report-stat-sub">{reportResult.daysWithCals}d c/ dados</div>
+                    </div>
+                    {reportResult.weightDiff !== null && (
+                      <div className="report-stat">
+                        <div className="report-stat-val" style={{ color: reportResult.weightDiff <= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                          {reportResult.weightDiff > 0 ? '+' : ''}{reportResult.weightDiff}kg
+                        </div>
+                        <div className="report-stat-label">Variação peso</div>
+                        <div className="report-stat-sub">{reportResult.firstW} → {reportResult.lastW}kg</div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Seção 2: Macros */}
+                <div className="report-section">
+                  <div className="report-section-title">🥗 Macros (média/dia)</div>
+                  <div className="report-grid">
+                    {([
+                      { label:'Proteína',    val: reportResult.avgP, meta: userGoals.p },
+                      { label:'Carboidrato', val: reportResult.avgC, meta: userGoals.c },
+                      { label:'Gordura',     val: reportResult.avgF, meta: userGoals.f },
+                    ] as const).map(({ label, val, meta }) => (
+                      <div key={label} className="report-stat">
+                        <div className="report-stat-val">{val}g</div>
+                        <div className="report-stat-label">{label}</div>
+                        <div className="report-stat-sub" style={{ color: val >= meta ? 'var(--success)' : 'var(--warning)' }}>
+                          {val >= meta ? '✓ ok' : `falta ${meta - val}g`} / {meta}g
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Seção 3: Gráfico calorias */}
+                <div className="report-section">
+                  <div className="report-section-title">📈 Calorias no Período</div>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={reportResult.calChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="label" tick={{ fill:'var(--text-secondary)', fontSize:10 }} interval="preserveStartEnd" />
+                      <YAxis tick={{ fill:'var(--text-secondary)', fontSize:10 }} />
+                      <Tooltip contentStyle={{ background:'var(--card-bg)', border:'1px solid var(--border)', borderRadius:6 }} />
+                      <ReferenceLine y={userGoals.cals} stroke="var(--success)" strokeDasharray="4 4" />
+                      <Line type="monotone" dataKey="cals" stroke="var(--primary)" strokeWidth={2} dot={false} name="kcal" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Seção 3b: Gráfico peso */}
+                {reportResult.pesoChart.length >= 2 && (
+                  <div className="report-section">
+                    <div className="report-section-title">⚖️ Peso no Período</div>
+                    <ResponsiveContainer width="100%" height={160}>
+                      <LineChart data={reportResult.pesoChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="label" tick={{ fill:'var(--text-secondary)', fontSize:10 }} interval="preserveStartEnd" />
+                        <YAxis domain={['auto','auto']} tick={{ fill:'var(--text-secondary)', fontSize:10 }} />
+                        <Tooltip contentStyle={{ background:'var(--card-bg)', border:'1px solid var(--border)', borderRadius:6 }} />
+                        <Line type="monotone" dataKey="peso" stroke="var(--success)" strokeWidth={2} dot={false} name="kg" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                {/* Seção 4: Gráfico macros */}
+                <div className="report-section">
+                  <div className="report-section-title">🏋️ Macros Médios vs Meta</div>
+                  <ResponsiveContainer width="100%" height={140}>
+                    <BarChart data={reportResult.macroChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="name" tick={{ fill:'var(--text-secondary)', fontSize:11 }} />
+                      <YAxis tick={{ fill:'var(--text-secondary)', fontSize:10 }} />
+                      <Tooltip contentStyle={{ background:'var(--card-bg)', border:'1px solid var(--border)', borderRadius:6 }} />
+                      <Legend wrapperStyle={{ fontSize:11 }} />
+                      <Bar dataKey="consumido" fill="var(--primary)" name="Consumido (g)" radius={[3,3,0,0]} />
+                      <Bar dataKey="meta"      fill="var(--border)"  name="Meta (g)"      radius={[3,3,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Seção 5: Insights */}
+                <div className="report-section">
+                  <div className="report-section-title">💡 Insights Automáticos</div>
+                  {reportResult.insights.map((ins, i) => (
+                    <div key={i} className="report-insight">• {ins}</div>
+                  ))}
+                </div>
+
+                <div className="report-footer">
+                  Gerado em {reportResult.generatedAt} · Meu Plano
+                </div>
+              </div>
+
+              {/* Barra de ações */}
+              <div className="report-action-bar">
+                <button className="btn btn-cancel btn-small" style={{ width:'auto' }}
+                  onClick={() => { setReportStep('select'); setReportResult(null) }}>
+                  ← Novo
+                </button>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={copyReportToClipboard}>
+                  📋 Copiar
+                </button>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={() => window.print()}>
+                  📥 PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Header ── */}
       <header>
         <div className="header-content">
@@ -1051,6 +1487,13 @@ export default function Home() {
             </div>
           )}
 
+          <div className="report-btn-row">
+            <button className="btn btn-small btn-report" style={{ width:'auto' }}
+              onClick={() => { setShowReport(true); setReportStep('select'); setReportResult(null) }}>
+              📄 Gerar Relatório
+            </button>
+          </div>
+
           <div className="sub-tabs">
             {(['diario','semanal','mensal'] as const).map(st => (
               <button key={st} className={`sub-tab-btn ${statsSubTab === st ? 'active' : ''}`}
@@ -1266,6 +1709,60 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* ── Lembretes de Refeição ── */}
+          <div className="card">
+            <div className="card-title">🔔 Lembretes de Refeição</div>
+
+            {notifPermission === 'default' && (
+              <div className="reminder-banner">
+                <span>Permita notificações para receber lembretes</span>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={requestNotifPermission}>
+                  Permitir
+                </button>
+              </div>
+            )}
+            {notifPermission === 'denied' && (
+              <div className="reminder-banner reminder-banner--denied">
+                Notificações bloqueadas. Habilite nas configurações do navegador para usar lembretes.
+              </div>
+            )}
+
+            <div className="reminder-toggle-row">
+              <span style={{ fontSize:14, fontWeight:500 }}>Ativar Lembretes</span>
+              <button
+                className={`toggle-btn ${remindersEnabled ? 'toggle-on' : 'toggle-off'}`}
+                onClick={() => toggleReminders(!remindersEnabled)}
+                disabled={notifPermission === 'denied'}
+              >
+                {remindersEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+
+            <div style={{ marginTop:12 }}>
+              {([
+                { key:'cafe',   label:'Café da Manhã' },
+                { key:'almoco', label:'Almoço'        },
+                { key:'lanche', label:'Lanche'        },
+                { key:'jantar', label:'Jantar'        },
+                { key:'ceia',   label:'Ceia'          },
+              ] as const).map(({ key, label }) => (
+                <div key={key} className="reminder-time-row">
+                  <span className="reminder-time-label">⏰ {label}</span>
+                  <input
+                    type="time"
+                    className="reminder-time-input"
+                    value={reminderDraft[key]}
+                    onChange={e => setReminderDraft(d => ({ ...d, [key]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button className="btn" style={{ marginTop:12 }} onClick={saveReminderSettings}>
+              💾 Salvar Horários
+            </button>
+          </div>
 
           {/* ── Minhas Metas ── */}
           <div className="card">
