@@ -565,6 +565,158 @@ textarea {
   line-height: 1.5;
 }
 
+/* ── Substituidores ───────────────────────────────────────────────────────── */
+
+.meal-item-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.meal-item-wrap .meal-item {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.alt-wrap {
+  position: relative;
+  flex-shrink: 0;
+  padding-top: 6px;
+}
+
+.alt-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+
+.alt-btn:hover {
+  border-color: var(--primary);
+  background: rgba(87, 157, 255, 0.1);
+}
+
+.alt-dropdown {
+  position: absolute;
+  right: 0;
+  top: 36px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 200px;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+.alt-option {
+  padding: 10px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.alt-option:last-child { border-bottom: none }
+
+.alt-option:hover { background: rgba(87, 157, 255, 0.1) }
+
+.alt-original {
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.sub-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(87, 157, 255, 0.2);
+  color: var(--primary);
+  border-radius: 4px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+
+/* ── Configurações ────────────────────────────────────────────────────────── */
+
+.config-goals {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-goal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.config-goal-label {
+  font-size: 14px;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.config-goal-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-goal-input {
+  width: 90px !important;
+  margin-bottom: 0 !important;
+  text-align: right;
+  padding: 8px 10px !important;
+}
+
+.config-goal-unit {
+  font-size: 13px;
+  color: var(--text-secondary);
+  width: 28px;
+}
+
+.config-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.config-item-row:last-child { border-bottom: none }
+
+.config-reset-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.config-reset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 /* ── Modal ────────────────────────────────────────────────────────────────── */
 
 .modal-overlay {
