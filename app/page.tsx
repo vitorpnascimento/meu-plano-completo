@@ -1252,8 +1252,10 @@ export default function Home() {
   const mealsCompleted  = meals.filter(m => (m.items ?? []).length > 0 && (m.items ?? []).every(it => todayChecked[it.id])).length
   const todayStat       = dayStats[today]
   const todayFinished   = todayStat?.finalizado || false
-  const todayCalTotal   = todayStat?.caloriasTotal ?? totalCals
-  const todayFeedback   = getFeedback(todayCalTotal, CAL_META, CAL_MAX)
+  const todayCalTotal   = todayStat?.caloriasTotal ?? totalCals   // snapshot histórico (usado em stats)
+  // Feedback usa sempre dados ao vivo: itens marcados + extras, com a meta atual
+  const liveDayTotal    = totalCals + (todayStat?.caloriasExtras || 0)
+  const todayFeedback   = getFeedback(liveDayTotal, CAL_META, CAL_MAX)
 
   // ── Histórico de peso ───────────────────────────────────────────────────────
 
