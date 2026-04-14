@@ -11,50 +11,50 @@ import {
 
 const MACROS_PER_ITEM = [
   // Café
-  { kcal: 146, p: 13.3,  c: 0.6,  f: 9.5  },  // 2 ovos cozidos
-  { kcal: 135, p: 4.2,   c: 24.4, f: 0.75 },  // 2 fatias pão francês
-  { kcal: 108, p: 8.5,   c: 0.6,  f: 5.4  },  // 60g requeijão light
+  { kcal: 146, p: 13,   c: 1,  f: 9.5 },  // Ovo (2 un)
+  { kcal: 135, p: 4,    c: 24, f: 0.8 },  // Pão (2 un)
+  { kcal: 108, p: 8.5,  c: 1,  f: 5.4 },  // Requeijão Light (60g)
   // Almoço
-  { kcal: 330, p: 62.0,  c: 0.0,  f: 7.2  },  // 200g frango cozido
-  { kcal: 195, p: 4.05,  c: 42.3, f: 0.45 },  // 150g arroz cozido
-  { kcal: 30,  p: 1.0,   c: 6.0,  f: 0.2  },  // 100g vegetais
+  { kcal: 330, p: 62,   c: 0,  f: 7.2 },  // Frango (200g)
+  { kcal: 195, p: 4,    c: 42, f: 0.5 },  // Arroz (150g)
+  { kcal: 30,  p: 1,    c: 6,  f: 0.2 },  // Vegetais (100g)
   // Lanche
-  { kcal: 135, p: 4.2,   c: 24.4, f: 0.75 },  // 2 fatias pão francês
-  { kcal: 165, p: 31.0,  c: 0.0,  f: 3.6  },  // 100g frango cozido
-  { kcal: 54,  p: 4.5,   c: 0.3,  f: 3.25 },  // 30g requeijão light
+  { kcal: 135, p: 4,    c: 24, f: 0.8 },  // Pão (2 un)
+  { kcal: 165, p: 31,   c: 0,  f: 3.6 },  // Frango (100g)
+  { kcal: 54,  p: 4.5,  c: 0,  f: 3.3 },  // Requeijão Light (30g)
   // Jantar
-  { kcal: 330, p: 62.0,  c: 0.0,  f: 7.2  },  // 200g frango cozido
-  { kcal: 195, p: 4.05,  c: 42.3, f: 0.45 },  // 150g arroz cozido
-  { kcal: 30,  p: 1.0,   c: 6.0,  f: 0.2  },  // 100g vegetais
+  { kcal: 330, p: 62,   c: 0,  f: 7.2 },  // Frango (200g)
+  { kcal: 195, p: 4,    c: 42, f: 0.5 },  // Arroz (150g)
+  { kcal: 30,  p: 1,    c: 6,  f: 0.2 },  // Vegetais (100g)
   // Ceia
-  { kcal: 120, p: 25.0,  c: 2.0,  f: 1.0  },  // 30g whey
-  { kcal: 78,  p: 3.46,  c: 13.3, f: 1.38 },  // 20g aveia
+  { kcal: 120, p: 25,   c: 2,  f: 1.0 },  // Whey (30g)
+  { kcal: 78,  p: 3,    c: 13, f: 1.4 },  // Aveia (20g)
 ]
 
 const MEALS: [string, string[][]][] = [
-  ["Refeição 1 — Café da Manhã (~389 kcal)", [
-    ["2 Ovos Inteiros Cozidos",  "146 kcal | P: 13,3g C: 0,6g G: 9,5g"],
-    ["2 Fatias Pão Francês",     "135 kcal | P: 4,2g C: 24,4g G: 0,75g"],
-    ["60g Requeijão Light",      "108 kcal | P: 8,5g C: 0,6g G: 5,4g"],
+  ["Café da Manhã · ~389 kcal", [
+    ["Ovo (2 un)",             "146 kcal · P 13g · C 1g · G 9,5g"],
+    ["Pão francês (2 un)",     "135 kcal · P 4g · C 24g · G 0,8g"],
+    ["Requeijão Light (60g)",  "108 kcal · P 8,5g · C 1g · G 5,4g"],
   ]],
-  ["Refeição 2 — Almoço (~555 kcal)", [
-    ["200g Peito Frango Cozido", "330 kcal | P: 62g C: 0g G: 7,2g"],
-    ["150g Arroz Cozido",        "195 kcal | P: 4,05g C: 42,3g G: 0,45g"],
-    ["100g Vegetais Genéricos",  "30 kcal | P: 1g C: 6g G: 0,2g"],
+  ["Almoço · ~555 kcal", [
+    ["Frango (200g)",          "330 kcal · P 62g · C 0g · G 7,2g"],
+    ["Arroz (150g)",           "195 kcal · P 4g · C 42g · G 0,5g"],
+    ["Vegetais (100g)",        "30 kcal · P 1g · C 6g · G 0,2g"],
   ]],
-  ["Refeição 3 — Lanche (~354 kcal)", [
-    ["2 Fatias Pão Francês",     "135 kcal | P: 4,2g C: 24,4g G: 0,75g"],
-    ["100g Frango Cozido",       "165 kcal | P: 31g C: 0g G: 3,6g"],
-    ["30g Requeijão Light",      "54 kcal | P: 4,5g C: 0,3g G: 3,25g"],
+  ["Lanche · ~354 kcal", [
+    ["Pão francês (2 un)",     "135 kcal · P 4g · C 24g · G 0,8g"],
+    ["Frango (100g)",          "165 kcal · P 31g · C 0g · G 3,6g"],
+    ["Requeijão Light (30g)",  "54 kcal · P 4,5g · C 0g · G 3,3g"],
   ]],
-  ["Refeição 4 — Jantar (~555 kcal)", [
-    ["200g Peito Frango Cozido", "330 kcal | P: 62g C: 0g G: 7,2g"],
-    ["150g Arroz Cozido",        "195 kcal | P: 4,05g C: 42,3g G: 0,45g"],
-    ["100g Vegetais Genéricos",  "30 kcal | P: 1g C: 6g G: 0,2g"],
+  ["Jantar · ~555 kcal", [
+    ["Frango (200g)",          "330 kcal · P 62g · C 0g · G 7,2g"],
+    ["Arroz (150g)",           "195 kcal · P 4g · C 42g · G 0,5g"],
+    ["Vegetais (100g)",        "30 kcal · P 1g · C 6g · G 0,2g"],
   ]],
-  ["Refeição 5 — Ceia (~198 kcal)", [
-    ["30g Whey Protein",         "120 kcal | P: 25g C: 2g G: 1g"],
-    ["20g Aveia",                "78 kcal | P: 3,46g C: 13,3g G: 1,38g"],
+  ["Ceia · ~198 kcal", [
+    ["Whey (30g)",             "120 kcal · P 25g · C 2g · G 1g"],
+    ["Aveia (20g)",            "78 kcal · P 3g · C 13g · G 1,4g"],
   ]],
 ]
 
@@ -76,7 +76,12 @@ function calcDayMacros(mealsData: Record<string, any>, date: string) {
       f    += MACROS_PER_ITEM[i].f
     }
   }
-  return { cals, p, c, f }
+  return {
+    cals: Math.round(cals),
+    p:    Math.round(p),
+    c:    Math.round(c),
+    f:    Math.round(f),
+  }
 }
 
 function getFeedback(cals: number) {
