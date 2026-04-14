@@ -10,65 +10,58 @@ import {
 // ─── Constantes ────────────────────────────────────────────────────────────────
 
 const MACROS_PER_ITEM = [
-  { kcal: 155, p: 12, c: 1,  f: 11 },
-  { kcal: 150, p: 5,  c: 28, f: 2  },
-  { kcal: 60,  p: 3,  c: 1,  f: 5  },
-  { kcal: 25,  p: 0,  c: 6,  f: 0  },
-  { kcal: 10,  p: 0,  c: 2,  f: 0  },
-  { kcal: 280, p: 52, c: 0,  f: 8  },
-  { kcal: 130, p: 3,  c: 28, f: 0  },
-  { kcal: 20,  p: 1,  c: 4,  f: 0  },
-  { kcal: 20,  p: 1,  c: 4,  f: 0  },
-  { kcal: 150, p: 5,  c: 28, f: 2  },
-  { kcal: 120, p: 24, c: 0,  f: 2  },
-  { kcal: 45,  p: 2,  c: 0,  f: 4  },
-  { kcal: 25,  p: 0,  c: 6,  f: 0  },
-  { kcal: 10,  p: 0,  c: 0,  f: 1  },
-  { kcal: 280, p: 52, c: 0,  f: 8  },
-  { kcal: 100, p: 2,  c: 23, f: 0  },
-  { kcal: 20,  p: 1,  c: 4,  f: 0  },
-  { kcal: 120, p: 25, c: 2,  f: 1  },
-  { kcal: 165, p: 20, c: 12, f: 4  },
-  { kcal: 15,  p: 0,  c: 3,  f: 0  },
+  // Café
+  { kcal: 146, p: 13.3,  c: 0.6,  f: 9.5  },  // 2 ovos cozidos
+  { kcal: 135, p: 4.2,   c: 24.4, f: 0.75 },  // 2 fatias pão francês
+  { kcal: 108, p: 8.5,   c: 0.6,  f: 5.4  },  // 60g requeijão light
+  // Almoço
+  { kcal: 330, p: 62.0,  c: 0.0,  f: 7.2  },  // 200g frango cozido
+  { kcal: 195, p: 4.05,  c: 42.3, f: 0.45 },  // 150g arroz cozido
+  { kcal: 30,  p: 1.0,   c: 6.0,  f: 0.2  },  // 100g vegetais
+  // Lanche
+  { kcal: 135, p: 4.2,   c: 24.4, f: 0.75 },  // 2 fatias pão francês
+  { kcal: 165, p: 31.0,  c: 0.0,  f: 3.6  },  // 100g frango cozido
+  { kcal: 54,  p: 4.5,   c: 0.3,  f: 3.25 },  // 30g requeijão light
+  // Jantar
+  { kcal: 330, p: 62.0,  c: 0.0,  f: 7.2  },  // 200g frango cozido
+  { kcal: 195, p: 4.05,  c: 42.3, f: 0.45 },  // 150g arroz cozido
+  { kcal: 30,  p: 1.0,   c: 6.0,  f: 0.2  },  // 100g vegetais
+  // Ceia
+  { kcal: 120, p: 25.0,  c: 2.0,  f: 1.0  },  // 30g whey
+  { kcal: 78,  p: 3.46,  c: 13.3, f: 1.38 },  // 20g aveia
 ]
 
 const MEALS: [string, string[][]][] = [
-  ["Refeição 1 - Café da Manhã (400 kcal)", [
-    ["2 ovos inteiros",                       "155 kcal | P: 12g C: 1g G: 11g"],
-    ["2 fatias de pão ou 1 francês",          "150 kcal | P: 5g C: 28g G: 2g"],
-    ["20-30g requeijão/cream cheese",         "60 kcal | P: 3g C: 1g G: 5g"],
-    ["1 fruta (banana/maçã/morango)",         "25 kcal | P: 0g C: 6g G: 0g"],
-    ["Café sem açúcar",                       "10 kcal | P: 0g C: 2g G: 0g"],
+  ["Refeição 1 — Café da Manhã (~389 kcal)", [
+    ["2 Ovos Inteiros Cozidos",  "146 kcal | P: 13,3g C: 0,6g G: 9,5g"],
+    ["2 Fatias Pão Francês",     "135 kcal | P: 4,2g C: 24,4g G: 0,75g"],
+    ["60g Requeijão Light",      "108 kcal | P: 8,5g C: 0,6g G: 5,4g"],
   ]],
-  ["Refeição 2 - Almoço (450 kcal)", [
-    ["160g frango/carne magra",               "280 kcal | P: 52g C: 0g G: 8g"],
-    ["150g arroz branco",                     "130 kcal | P: 3g C: 28g G: 0g"],
-    ["Vegetais cozidos à vontade",            "20 kcal | P: 1g C: 4g G: 0g"],
-    ["Salada crua à vontade",                 "20 kcal | P: 1g C: 4g G: 0g"],
+  ["Refeição 2 — Almoço (~555 kcal)", [
+    ["200g Peito Frango Cozido", "330 kcal | P: 62g C: 0g G: 7,2g"],
+    ["150g Arroz Cozido",        "195 kcal | P: 4,05g C: 42,3g G: 0,45g"],
+    ["100g Vegetais Genéricos",  "30 kcal | P: 1g C: 6g G: 0,2g"],
   ]],
-  ["Refeição 3 - Lanche (350 kcal)", [
-    ["2 fatias de pão ou 1 francês",          "150 kcal | P: 5g C: 28g G: 2g"],
-    ["100g frango desfiado ou 4 fatias peru", "120 kcal | P: 24g C: 0g G: 2g"],
-    ["15g requeijão",                         "45 kcal | P: 2g C: 0g G: 4g"],
-    ["1 fruta pequena",                       "25 kcal | P: 0g C: 6g G: 0g"],
-    ["10g castanha/amêndoa (extra)",          "10 kcal | P: 0g C: 0g G: 1g"],
+  ["Refeição 3 — Lanche (~354 kcal)", [
+    ["2 Fatias Pão Francês",     "135 kcal | P: 4,2g C: 24,4g G: 0,75g"],
+    ["100g Frango Cozido",       "165 kcal | P: 31g C: 0g G: 3,6g"],
+    ["30g Requeijão Light",      "54 kcal | P: 4,5g C: 0,3g G: 3,25g"],
   ]],
-  ["Refeição 4 - Jantar (400 kcal)", [
-    ["160g frango/peixe/carne magra",         "280 kcal | P: 52g C: 0g G: 8g"],
-    ["120-150g arroz ou batata/aipim",        "100 kcal | P: 2g C: 23g G: 0g"],
-    ["Vegetais + salada",                     "20 kcal | P: 1g C: 4g G: 0g"],
+  ["Refeição 4 — Jantar (~555 kcal)", [
+    ["200g Peito Frango Cozido", "330 kcal | P: 62g C: 0g G: 7,2g"],
+    ["150g Arroz Cozido",        "195 kcal | P: 4,05g C: 42,3g G: 0,45g"],
+    ["100g Vegetais Genéricos",  "30 kcal | P: 1g C: 6g G: 0,2g"],
   ]],
-  ["Refeição 5 - Ceia (300 kcal)", [
-    ["1 scoop whey (30g)",                    "120 kcal | P: 25g C: 2g G: 1g"],
-    ["1 iogurte natural (165g)",              "165 kcal | P: 20g C: 12g G: 4g"],
-    ["10-15g aveia (opcional)",               "15 kcal | P: 0g C: 3g G: 0g"],
+  ["Refeição 5 — Ceia (~198 kcal)", [
+    ["30g Whey Protein",         "120 kcal | P: 25g C: 2g G: 1g"],
+    ["20g Aveia",                "78 kcal | P: 3,46g C: 13,3g G: 1,38g"],
   ]],
 ]
 
-const MEAL_GROUPS = [5, 4, 5, 3, 3]
-const MACRO_GOALS = { p: 195, c: 245, f: 63 }
-const CAL_META = 1900
-const CAL_MAX  = 2100
+const MEAL_GROUPS = [3, 3, 3, 3, 2]
+const MACRO_GOALS = { p: 228, c: 162, f: 41 }
+const CAL_META = 2050
+const CAL_MAX  = 2250
 
 // ─── Helpers (fora do componente, sem estado) ──────────────────────────────────
 
@@ -441,7 +434,7 @@ export default function Home() {
           {/* Stats */}
           <div className="stats">
             <div className="stat-box">
-              <div className="stat-value">{mealsCompleted}/5</div>
+              <div className="stat-value">{mealsCompleted}/{MEALS.length}</div>
               <div className="stat-label">Refeições</div>
             </div>
             <div className="stat-box">
