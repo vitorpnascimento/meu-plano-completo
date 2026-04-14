@@ -1734,3 +1734,219 @@ footer {
   color: var(--text-secondary);
 }
 .import-item.unmatched .import-item-name { color: var(--warning); }
+
+/* ── Calculadora ─────────────────────────────────────────────────────────── */
+
+.calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.calc-field { display: flex; flex-direction: column; gap: 4px; }
+.calc-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.calc-unit { font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.calc-obj-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.calc-obj-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.calc-obj-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  font-weight: 600;
+}
+
+.calc-result-box {
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.calc-result-imc {
+  padding: 14px 16px;
+  font-size: 16px;
+  font-weight: 700;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--border);
+}
+.calc-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.calc-result-row strong { color: var(--text-primary); }
+
+.calc-options-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+.calc-option-card {
+  padding: 14px 12px;
+  border-right: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.calc-option-card:last-child { border-right: none; }
+.calc-option-card.active {
+  background: rgba(31,162,255,0.08);
+}
+.calc-option-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.calc-option-val {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+.calc-option-desc {
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+@media (max-width: 480px) {
+  .calc-options-grid { grid-template-columns: 1fr; }
+  .calc-option-card  { border-right: none; border-bottom: 1px solid var(--border); }
+  .calc-option-card:last-child { border-bottom: none; }
+}
+
+/* ── Dieta Gerada ─────────────────────────────────────────────────────────── */
+
+.diet-gen-summary {
+  margin-top: 18px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.diet-gen-total {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--primary);
+}
+.diet-gen-macros-row {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.diet-gen-meal {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.diet-gen-meal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--border);
+}
+.diet-gen-meal-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.diet-gen-meal-kcal {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.diet-gen-pct {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.diet-gen-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.diet-gen-item:last-child { border-bottom: none; }
+.diet-gen-item-body { flex: 1; }
+.diet-gen-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.diet-gen-item-detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.diet-sub-btn {
+  background: rgba(31,162,255,0.1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.diet-sub-btn:hover { background: rgba(31,162,255,0.2); }
+
+.diet-ia-badge {
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--warning);
+  color: #000;
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 4px;
+}
+.diet-budget-badge { font-size: 12px; }
+
+.diet-sub-original {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}

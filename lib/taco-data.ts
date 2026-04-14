@@ -1,15 +1,51 @@
 // Banco de dados TACO (Tabela Brasileira de Composição de Alimentos, UNICAMP)
-// Valores por 100g do alimento preparado/cru conforme indicado.
+// + alimentos complementares estimados com base em USDA/literatura.
+// Valores por 100g.
 
 export interface TacoFood {
   id:   number
   nome: string
   cat:  string
   kcal: number
-  p:    number   // proteína
-  c:    number   // carboidrato
-  f:    number   // gordura (lipídeos)
+  p:    number   // proteína (g)
+  c:    number   // carboidrato (g)
+  f:    number   // gordura (g)
 }
+
+/** IDs de alimentos acessíveis / baratos para dietas econômicas */
+export const BUDGET_IDS = new Set<number>([
+  2, 4, 11, 13,                       // frango cozido, coxa, carne moída, atum
+  19, 20,                              // ovos
+  23, 24, 25, 27, 34,                  // arroz, aveia, pão francês, cuscuz
+  36, 37, 38,                          // batata, batata doce, mandioca
+  40, 41, 43, 45,                      // feijão carioca, preto, lentilha, ervilha
+  46, 47, 48,                          // leite, iogurte natural
+  58, 59, 60, 61, 62,                  // banana, maçã, laranja, mamão
+  72, 73, 74, 75, 77, 78, 80, 82, 83, 85, 86, 87, 88, // hortaliças
+  90, 92, 93,                          // óleo soja, amendoim, pasta amendoim
+  99, 101, 104, 106, 107, 108, 110, 111, 112, 113, 114, 115, // new budget foods
+])
+
+// ─── Tipos para geração de dieta ──────────────────────────────────────────────
+
+export interface GeneratedItem {
+  food:  TacoFood
+  grams: number
+  kcal:  number
+  p:     number
+  c:     number
+  f:     number
+}
+
+export interface GeneratedMeal {
+  mealId:     string
+  title:      string
+  targetKcal: number
+  actualKcal: number
+  items:      GeneratedItem[]
+}
+
+export type GeneratedDiet = GeneratedMeal[]
 
 export const TACO: TacoFood[] = [
   // ── Carnes e Aves ──────────────────────────────────────────────────────────
@@ -120,6 +156,39 @@ export const TACO: TacoFood[] = [
   { id: 95, nome:'Castanha de caju, torrada',         cat:'Oleaginosas', kcal:570, p:18.5, c:29.1, f:43.9},
   { id: 96, nome:'Nozes',                             cat:'Oleaginosas', kcal:620, p:14.3, c:14.1, f:59.4},
   { id: 97, nome:'Amêndoas cruas',                    cat:'Oleaginosas', kcal:581, p:21.2, c:21.7, f:49.9},
+  // ── Laticínios e Derivados (complemento) ──────────────────────────────────
+  { id: 98, nome:'Requeijão Light',                   cat:'Laticínios', kcal:138, p:9.5,  c:4.0,  f:9.0  },
+  { id: 99, nome:'Iogurte desnatado',                 cat:'Laticínios', kcal:43,  p:4.3,  c:5.8,  f:0.1  },
+  { id:100, nome:'Queijo Minas Frescal',              cat:'Laticínios', kcal:264, p:17.4, c:3.2,  f:20.2 },
+  { id:101, nome:'Queijo Branco (Padrão)',            cat:'Laticínios', kcal:289, p:19.6, c:2.0,  f:23.0 },
+  // ── Condimentos e Temperos ─────────────────────────────────────────────────
+  { id:102, nome:'Maionese Light',                    cat:'Condimentos', kcal:241, p:1.0, c:8.0,  f:22.0 },
+  { id:103, nome:'Mostarda',                          cat:'Condimentos', kcal:67,  p:4.0, c:7.5,  f:2.5  },
+  { id:104, nome:'Mel',                               cat:'Outros',      kcal:304, p:0.3, c:82.4, f:0.0  },
+  { id:105, nome:'Ketchup',                           cat:'Condimentos', kcal:112, p:1.7, c:27.0, f:0.1  },
+  // ── Bebidas ───────────────────────────────────────────────────────────────
+  { id:106, nome:'Café preto s/ açúcar',              cat:'Bebidas', kcal:2,   p:0.1, c:0.0,  f:0.0  },
+  { id:107, nome:'Chá s/ açúcar',                    cat:'Bebidas', kcal:1,   p:0.0, c:0.2,  f:0.0  },
+  { id:108, nome:'Suco de laranja natural',           cat:'Bebidas', kcal:45,  p:0.7, c:10.4, f:0.2  },
+  { id:109, nome:'Água de coco',                      cat:'Bebidas', kcal:19,  p:0.7, c:3.7,  f:0.2  },
+  // ── Carnes e Processados (complemento) ────────────────────────────────────
+  { id:110, nome:'Carne moída (patinho), crua',       cat:'Carnes', kcal:197, p:19.8, c:0.0, f:12.8 },
+  { id:111, nome:'Linguiça calabresa, grelhada',      cat:'Carnes', kcal:335, p:14.6, c:3.0, f:29.9 },
+  { id:112, nome:'Peito de peru defumado',            cat:'Carnes', kcal:103, p:18.0, c:1.8, f:2.4  },
+  // ── Cereais e Derivados (complemento) ─────────────────────────────────────
+  { id:113, nome:'Pão de forma integral',             cat:'Cereais', kcal:247, p:8.1, c:42.5, f:4.7 },
+  { id:114, nome:'Cereal integral (flocos)',          cat:'Cereais', kcal:361, p:7.8, c:78.5, f:1.7 },
+  { id:115, nome:'Tapioca (beiju, pronto)',           cat:'Cereais', kcal:152, p:0.3, c:37.5, f:0.3 },
+  // ── Hortaliças (complemento) ───────────────────────────────────────────────
+  { id:116, nome:'Abóbora, cozida',                   cat:'Hortaliças', kcal:17, p:0.5, c:3.6, f:0.2 },
+  { id:117, nome:'Espinafre, cozido',                 cat:'Hortaliças', kcal:22, p:2.2, c:2.8, f:0.5 },
+  { id:118, nome:'Milho verde, cozido',               cat:'Hortaliças', kcal:74, p:2.5, c:15.5, f:0.8},
+  // ── Proteína Vegetal ───────────────────────────────────────────────────────
+  { id:119, nome:'Proteína de soja texturizada, hid.',cat:'Leguminosas', kcal:98, p:13.8, c:7.2, f:1.4},
+  { id:120, nome:'Tofu',                              cat:'Leguminosas', kcal:76, p:8.1, c:1.9, f:4.2 },
+  // ── Sementes ──────────────────────────────────────────────────────────────
+  { id:121, nome:'Chia',                              cat:'Oleaginosas', kcal:490, p:16.5, c:42.1, f:30.7},
+  { id:122, nome:'Linhaça dourada',                   cat:'Oleaginosas', kcal:534, p:18.1, c:28.9, f:42.2},
 ]
 
 // ─── Funções de busca ────────────────────────────────────────────────────────
@@ -167,4 +236,157 @@ export function fuzzyMatchTACO(name: string): TacoFood | null {
   }
 
   return bestScore >= 2 ? best : null
+}
+
+// ─── IA Fallback ──────────────────────────────────────────────────────────────
+
+/** Consulta API route /api/nutrition para estimar macros via IA quando o TACO não encontra */
+export async function searchWithAI(foodName: string): Promise<TacoFood | null> {
+  try {
+    const res = await fetch('/api/nutrition', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ food: foodName }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (typeof data.kcal !== 'number') return null
+    return {
+      id:   -1,
+      nome: `${foodName} [IA]`,
+      cat:  'IA Estimado',
+      kcal: Math.round(data.kcal),
+      p:    +(data.p  || 0).toFixed(1),
+      c:    +(data.c  || 0).toFixed(1),
+      f:    +(data.f  || 0).toFixed(1),
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Busca no TACO; se não encontrar, tenta via IA. Retorna null se ambos falham. */
+export async function searchFoodWithFallback(query: string): Promise<TacoFood | null> {
+  const tacoResult = fuzzyMatchTACO(query)
+  if (tacoResult) return tacoResult
+  return searchWithAI(query)
+}
+
+// ─── Geração de Dieta ─────────────────────────────────────────────────────────
+
+/** Template de refeição: lista de {id do alimento TACO, share% das kcal da refeição} */
+type SlotDef = { id: number; share: number }
+
+const STD_TEMPLATES: { mealId: string; title: string; calShare: number; slots: SlotDef[] }[] = [
+  { mealId:'cafe',   title:'Café da Manhã', calShare:0.20, slots:[
+    { id:49, share:0.40 }, // Iogurte grego
+    { id:27, share:0.35 }, // Aveia
+    { id:63, share:0.25 }, // Morango
+  ]},
+  { mealId:'almoco', title:'Almoço',        calShare:0.35, slots:[
+    { id:1,  share:0.40 }, // Frango grelhado
+    { id:24, share:0.28 }, // Arroz integral
+    { id:37, share:0.18 }, // Batata doce
+    { id:72, share:0.10 }, // Brócolis
+    { id:89, share:0.04 }, // Azeite
+  ]},
+  { mealId:'lanche', title:'Lanche',        calShare:0.15, slots:[
+    { id:55, share:0.50 }, // Whey
+    { id:58, share:0.30 }, // Banana
+    { id:93, share:0.20 }, // Pasta amendoim
+  ]},
+  { mealId:'jantar', title:'Jantar',        calShare:0.25, slots:[
+    { id:15, share:0.40 }, // Tilápia
+    { id:37, share:0.35 }, // Batata doce
+    { id:76, share:0.15 }, // Espinafre
+    { id:89, share:0.10 }, // Azeite
+  ]},
+  { mealId:'ceia',   title:'Ceia',          calShare:0.05, slots:[
+    { id:57, share:0.60 }, // Caseína
+    { id:27, share:0.40 }, // Aveia
+  ]},
+]
+
+const BUDGET_TEMPLATES: typeof STD_TEMPLATES = [
+  { mealId:'cafe',   title:'Café da Manhã', calShare:0.20, slots:[
+    { id:19, share:0.40 }, // Ovo cozido
+    { id:25, share:0.40 }, // Pão francês
+    { id:58, share:0.20 }, // Banana
+  ]},
+  { mealId:'almoco', title:'Almoço',        calShare:0.35, slots:[
+    { id:2,  share:0.38 }, // Frango cozido
+    { id:23, share:0.30 }, // Arroz branco
+    { id:40, share:0.22 }, // Feijão carioca
+    { id:73, share:0.10 }, // Cenoura
+  ]},
+  { mealId:'lanche', title:'Lanche',        calShare:0.15, slots:[
+    { id:48, share:0.50 }, // Iogurte natural
+    { id:60, share:0.30 }, // Maçã
+    { id:92, share:0.20 }, // Amendoim
+  ]},
+  { mealId:'jantar', title:'Jantar',        calShare:0.25, slots:[
+    { id:2,  share:0.40 }, // Frango cozido
+    { id:23, share:0.30 }, // Arroz branco
+    { id:41, share:0.20 }, // Feijão preto
+    { id:77, share:0.10 }, // Abobrinha
+  ]},
+  { mealId:'ceia',   title:'Ceia',          calShare:0.05, slots:[
+    { id:47, share:0.65 }, // Leite desnatado
+    { id:27, share:0.35 }, // Aveia
+  ]},
+]
+
+function buildItem(food: TacoFood, targetKcal: number, share: number): GeneratedItem {
+  const slotKcal = targetKcal * share
+  const rawGrams = food.kcal > 0 ? (slotKcal / food.kcal) * 100 : 50
+  const grams    = Math.max(10, Math.min(600, Math.round(rawGrams / 5) * 5))
+  const mult     = grams / 100
+  return {
+    food,
+    grams,
+    kcal: Math.round(food.kcal * mult),
+    p:    +(food.p * mult).toFixed(1),
+    c:    +(food.c * mult).toFixed(1),
+    f:    +(food.f * mult).toFixed(1),
+  }
+}
+
+/** Gera uma dieta de 5 refeições para a meta calórica informada. */
+export function generateDiet(targetCals: number, preferBudget: boolean): GeneratedDiet {
+  const templates = preferBudget ? BUDGET_TEMPLATES : STD_TEMPLATES
+  return templates.map(tpl => {
+    const mealTarget = Math.round(targetCals * tpl.calShare)
+    const items: GeneratedItem[] = tpl.slots.map(slot => {
+      const food = TACO.find(f => f.id === slot.id)
+      if (!food) return null
+      return buildItem(food, mealTarget, slot.share)
+    }).filter(Boolean) as GeneratedItem[]
+    return {
+      mealId:     tpl.mealId,
+      title:      tpl.title,
+      targetKcal: mealTarget,
+      actualKcal: items.reduce((s, it) => s + it.kcal, 0),
+      items,
+    }
+  })
+}
+
+/** Busca substitutos para um item gerado: mesma categoria, calorias similares. */
+export function getSubstitutes(food: TacoFood, grams: number, preferBudget: boolean): TacoFood[] {
+  const targetKcal = (food.kcal * grams) / 100
+  return TACO
+    .filter(f =>
+      f.id !== food.id &&
+      f.cat === food.cat &&
+      f.kcal > 0 &&
+      (!preferBudget || BUDGET_IDS.has(f.id))
+    )
+    .map(f => {
+      const altGrams = Math.max(10, Math.min(600, Math.round((targetKcal / f.kcal) * 100 / 5) * 5))
+      const altKcal  = Math.round((f.kcal * altGrams) / 100)
+      return { food: f, diff: Math.abs(altKcal - targetKcal) }
+    })
+    .sort((a, b) => a.diff - b.diff)
+    .slice(0, 6)
+    .map(x => x.food)
 }

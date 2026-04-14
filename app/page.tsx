@@ -15,7 +15,11 @@ import {
   loadUserData,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
-import { searchTACO, fuzzyMatchTACO, type TacoFood } from '../lib/taco-data'
+import {
+  searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
+  BUDGET_IDS,
+  type TacoFood, type GeneratedItem, type GeneratedMeal,
+} from '../lib/taco-data'
 
 // ─── Tipos ─────────────────────────────────────────────────────────────────────
 
@@ -72,6 +76,17 @@ interface ReportData {
   macroChart:   { name: string; consumido: number; meta: number }[]
   insights:     string[]
   generatedAt:  string
+}
+
+interface CalcResult {
+  imc:      number
+  imcClass: string
+  imcColor: string
+  tmb:      number
+  tdee:     number
+  manter:   number
+  emagrecer: number
+  ganhar:   number
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
@@ -478,6 +493,22 @@ export default function Home() {
   const [importStats,   setImportStats]   = useState<Record<string, number>>({})
   const [isDragging,    setIsDragging]    = useState(false)
   const importFileRef = useRef<HTMLInputElement>(null)
+
+  // ── Calculadora ──────────────────────────────────────────────────────────────
+  const [calcPeso,      setCalcPeso]      = useState('')
+  const [calcAltura,    setCalcAltura]    = useState('')
+  const [calcIdade,     setCalcIdade]     = useState('')
+  const [calcSexo,      setCalcSexo]      = useState<'M'|'F'>('M')
+  const [calcAtividade, setCalcAtividade] = useState<'sed'|'leve'|'mod'|'int'|'muito'>('mod')
+  const [calcObjetivo,  setCalcObjetivo]  = useState<'emagrecer'|'manter'|'ganhar'>('emagrecer')
+  const [calcResult,    setCalcResult]    = useState<CalcResult | null>(null)
+
+  // ── Gerar Dieta ───────────────────────────────────────────────────────────────
+  const [dietTarget,    setDietTarget]    = useState('')
+  const [dietBudget,    setDietBudget]    = useState(false)
+  const [generatedDiet, setGeneratedDiet] = useState<GeneratedMeal[] | null>(null)
+  const [dietSubModal,  setDietSubModal]  = useState<{mealIdx:number; itemIdx:number} | null>(null)
+  const [dietSubs,      setDietSubs]      = useState<TacoFood[]>([])
 
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
@@ -903,6 +934,101 @@ export default function Home() {
     setMeals(nm); save({ meals: nm }); setImportStep('done')
   }
 
+  // ── Ações: Calculadora ───────────────────────────────────────────────────────
+
+  const handleCalc = () => {
+    const peso   = parseFloat(calcPeso)
+    const altura = parseFloat(calcAltura)
+    const idade  = parseFloat(calcIdade)
+    if (!peso || !altura || !idade) return
+
+    const tmb = calcSexo === 'M'
+      ? 88.362 + (13.397 * peso) + (4.799 * altura) - (5.677 * idade)
+      : 447.593 + (9.247 * peso) + (3.098 * altura) - (4.330 * idade)
+
+    const FACTORS: Record<string, number> = { sed:1.2, leve:1.375, mod:1.55, int:1.725, muito:1.9 }
+    const tdee = tmb * FACTORS[calcAtividade]
+
+    const imc      = peso / Math.pow(altura / 100, 2)
+    const imcClass = imc < 18.5 ? 'Abaixo do peso' : imc < 25 ? 'Peso normal' : imc < 30 ? 'Sobrepeso' : 'Obeso'
+    const imcColor = imc < 18.5 ? 'var(--warning)' : imc < 25 ? 'var(--success)' : imc < 30 ? 'var(--warning)' : '#e53935'
+
+    setCalcResult({
+      imc: +imc.toFixed(1), imcClass, imcColor,
+      tmb:       Math.round(tmb),
+      tdee:      Math.round(tdee),
+      manter:    Math.round(tdee),
+      emagrecer: Math.round(tdee - 500),
+      ganhar:    Math.round(tdee + 500),
+    })
+  }
+
+  const useDietCals = (cals: number, obj: 'emagrecer'|'manter'|'ganhar') => {
+    setDietTarget(String(cals))
+    setDietBudget(false)
+    setGeneratedDiet(null)
+    setActiveTab('gerar-dieta')
+  }
+
+  // ── Ações: Gerar Dieta ────────────────────────────────────────────────────────
+
+  const handleGenerateDiet = () => {
+    const target = parseInt(dietTarget)
+    if (!target || target < 500) return
+    setGeneratedDiet(generateDiet(target, dietBudget))
+  }
+
+  const openDietSubModal = (mealIdx: number, itemIdx: number) => {
+    const item = generatedDiet?.[mealIdx]?.items[itemIdx]
+    if (!item) return
+    const subs = getSubstitutes(item.food, item.grams, dietBudget)
+    setDietSubs(subs)
+    setDietSubModal({ mealIdx, itemIdx })
+  }
+
+  const applyDietSub = (food: TacoFood) => {
+    if (!dietSubModal || !generatedDiet) return
+    const { mealIdx, itemIdx } = dietSubModal
+    const original = generatedDiet[mealIdx].items[itemIdx]
+    const rawGrams = food.kcal > 0 ? (original.kcal / food.kcal) * 100 : 50
+    const grams    = Math.max(10, Math.min(600, Math.round(rawGrams / 5) * 5))
+    const mult     = grams / 100
+    const newItem: GeneratedItem = {
+      food, grams,
+      kcal: Math.round(food.kcal * mult),
+      p:    +(food.p * mult).toFixed(1),
+      c:    +(food.c * mult).toFixed(1),
+      f:    +(food.f * mult).toFixed(1),
+    }
+    const newDiet = generatedDiet.map((m, mi) => {
+      if (mi !== mealIdx) return m
+      const items = m.items.map((it, ii) => ii === itemIdx ? newItem : it)
+      return { ...m, items, actualKcal: items.reduce((s, it) => s + it.kcal, 0) }
+    })
+    setGeneratedDiet(newDiet)
+    setDietSubModal(null)
+  }
+
+  const saveDiet = () => {
+    if (!generatedDiet) return
+    const nm: Meal[] = generatedDiet.map(gm => ({
+      id:    gm.mealId,
+      title: gm.title,
+      items: gm.items.map(gi => ({
+        id:   newId(),
+        name: `${gi.food.nome} (${gi.grams}g)`,
+        kcal: gi.kcal,
+        p:    gi.p,
+        c:    gi.c,
+        f:    gi.f,
+      })),
+    }))
+    setMeals(nm)
+    save({ meals: nm })
+    setGeneratedDiet(null)
+    setActiveTab('hoje')
+  }
+
   // ── Cálculos hoje ───────────────────────────────────────────────────────────
 
   const today        = getToday()
@@ -1014,6 +1140,52 @@ export default function Home() {
 
   return (
     <div>
+
+      {/* ══ Modal: Substituto de Dieta Gerada ══ */}
+      {dietSubModal !== null && generatedDiet && (() => {
+        const item = generatedDiet[dietSubModal.mealIdx]?.items[dietSubModal.itemIdx]
+        if (!item) return null
+        return (
+          <div className="modal-overlay" onClick={() => setDietSubModal(null)}>
+            <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+              <div className="modal-title">🔄 Substituir Alimento</div>
+              <div className="diet-sub-original">
+                <strong>{item.food.nome}</strong> · {item.grams}g · {item.kcal} kcal
+                <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
+                  Alternativas com calorias equivalentes (~{item.kcal} kcal)
+                </div>
+              </div>
+              {dietSubs.length === 0 ? (
+                <div style={{ color:'var(--text-secondary)', fontSize:13, padding:'16px 0' }}>
+                  Nenhuma alternativa na mesma categoria. Tente editar manualmente no cardápio.
+                </div>
+              ) : (
+                <div className="taco-results" style={{ marginTop:10 }}>
+                  {dietSubs.map(sub => {
+                    const rawG = sub.kcal > 0 ? (item.kcal / sub.kcal) * 100 : 50
+                    const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+                    const mult = g / 100
+                    return (
+                      <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
+                        <div className="taco-result-name">
+                          {sub.nome} · {g}g
+                          {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
+                        </div>
+                        <div className="taco-result-cat">
+                          {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setDietSubModal(null)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ══ Modal: TACO ══ */}
       {showTACO && (
@@ -1606,6 +1778,8 @@ export default function Home() {
           {[
             { id:'hoje',         label:'Hoje'      },
             { id:'peso',         label:'Peso'      },
+            { id:'calculadora',  label:'🧮 Calc'   },
+            { id:'gerar-dieta',  label:'🍽️ Dieta' },
             { id:'estatísticas', label:'📊 Stats'  },
             { id:'config',       label:'⚙️ Config' },
           ].map(t => (
@@ -1779,6 +1953,193 @@ export default function Home() {
               const inp = document.getElementById('weight-input') as HTMLInputElement
               if (inp.value) { addWeight(inp.value, weightPhoto); inp.value = ''; setWeightPhoto('') }
             }}>Registrar</button>
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════ CALCULADORA */}
+        <div className={`tab-content ${activeTab === 'calculadora' ? 'active' : ''}`}>
+          <div className="card">
+            <div className="card-title">🧮 Calculadora de Déficit Calórico</div>
+            <div className="calc-grid">
+              {[
+                { label:'Peso', unit:'kg',   val:calcPeso,   set:setCalcPeso   },
+                { label:'Altura', unit:'cm', val:calcAltura, set:setCalcAltura },
+                { label:'Idade', unit:'anos',val:calcIdade,  set:setCalcIdade  },
+              ].map(({ label, unit, val, set }) => (
+                <div key={label} className="calc-field">
+                  <label className="calc-label">{label} <span className="calc-unit">({unit})</span></label>
+                  <input type="number" className="login-input" value={val}
+                    onChange={e => set(e.target.value)} placeholder="0" />
+                </div>
+              ))}
+              <div className="calc-field">
+                <label className="calc-label">Sexo</label>
+                <select className="login-input" value={calcSexo} onChange={e => setCalcSexo(e.target.value as 'M'|'F')}>
+                  <option value="M">Masculino</option>
+                  <option value="F">Feminino</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="calc-field" style={{ marginTop:10 }}>
+              <label className="calc-label">Nível de Atividade</label>
+              <select className="login-input" value={calcAtividade}
+                onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
+                <option value="sed">Sedentário — pouco ou nenhum exercício</option>
+                <option value="leve">Leve — exercício 1–3×/semana</option>
+                <option value="mod">Moderado — exercício 3–5×/semana</option>
+                <option value="int">Intenso — exercício 5–7×/semana</option>
+                <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
+              </select>
+            </div>
+
+            <div className="calc-field" style={{ marginTop:10 }}>
+              <label className="calc-label">Objetivo</label>
+              <div className="calc-obj-row">
+                {([
+                  { v:'emagrecer', label:'📉 Emagrecer' },
+                  { v:'manter',    label:'➡️ Manter'    },
+                  { v:'ganhar',    label:'📈 Ganhar'     },
+                ] as const).map(({ v, label }) => (
+                  <button key={v}
+                    className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
+                    onClick={() => setCalcObjetivo(v)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
+              disabled={!calcPeso || !calcAltura || !calcIdade}>
+              🧮 Calcular
+            </button>
+
+            {calcResult && (
+              <div className="calc-result-box">
+                <div className="calc-result-imc" style={{ color: calcResult.imcColor }}>
+                  IMC: <strong>{calcResult.imc}</strong> — {calcResult.imcClass}
+                </div>
+                <div className="calc-result-row">
+                  <span>Taxa Metabólica Basal (TMB)</span>
+                  <span><strong>{calcResult.tmb.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                </div>
+                <div className="calc-result-row">
+                  <span>Gasto Total Diário (TDEE)</span>
+                  <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                </div>
+
+                <div className="calc-options-grid">
+                  {([
+                    { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/semana' },
+                    { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
+                    { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/semana' },
+                  ] as const).map(({ obj, label, val, desc }) => (
+                    <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
+                      <div className="calc-option-label">{label}</div>
+                      <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
+                      <div className="calc-option-desc">{desc}</div>
+                      <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
+                        onClick={() => useDietCals(val, obj)}>
+                        Usar →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════════════ GERAR DIETA */}
+        <div className={`tab-content ${activeTab === 'gerar-dieta' ? 'active' : ''}`}>
+          <div className="card">
+            <div className="card-title">🍽️ Gerar Dieta Automática</div>
+
+            <div className="calc-field">
+              <label className="calc-label">Meta calórica diária</label>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <input type="number" className="login-input" style={{ flex:1 }}
+                  value={dietTarget} onChange={e => setDietTarget(e.target.value)}
+                  placeholder="Ex: 1600" />
+                <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+              </div>
+              <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
+                Use a Calculadora para obter o valor ideal para você.
+              </div>
+            </div>
+
+            <div className="calc-field" style={{ marginTop:12 }}>
+              <label className="calc-label">Preferência de alimentos</label>
+              <div className="calc-obj-row">
+                <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`}
+                  onClick={() => setDietBudget(false)}>
+                  ✨ Melhor qualidade
+                </button>
+                <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`}
+                  onClick={() => setDietBudget(true)}>
+                  💰 Simples / Barato
+                </button>
+              </div>
+            </div>
+
+            <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
+              disabled={!dietTarget || parseInt(dietTarget) < 500}>
+              🚀 Gerar Dieta Automaticamente
+            </button>
+
+            {generatedDiet && (() => {
+              const totalKcal = generatedDiet.reduce((s, m) => s + m.actualKcal, 0)
+              const target    = parseInt(dietTarget) || 1
+              const totalP    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.p, 0)
+              const totalC    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.c, 0)
+              const totalF    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0)
+              return (
+                <>
+                  <div className="diet-gen-summary">
+                    <div className="diet-gen-total">
+                      {totalKcal.toLocaleString('pt-BR')} kcal
+                      <span className="diet-gen-pct"> ({Math.round(totalKcal / target * 100)}% da meta)</span>
+                    </div>
+                    <div className="diet-gen-macros-row">
+                      <span>P {totalP.toFixed(0)}g</span>
+                      <span>C {totalC.toFixed(0)}g</span>
+                      <span>G {totalF.toFixed(0)}g</span>
+                    </div>
+                    <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
+                      💾 Salvar como Meu Cardápio
+                    </button>
+                  </div>
+
+                  {generatedDiet.map((meal, mi) => (
+                    <div key={meal.mealId} className="diet-gen-meal">
+                      <div className="diet-gen-meal-header">
+                        <span className="diet-gen-meal-title">{meal.title}</span>
+                        <span className="diet-gen-meal-kcal">
+                          {meal.actualKcal} kcal
+                          <span className="diet-gen-pct"> ({Math.round(meal.actualKcal / target * 100)}%)</span>
+                        </span>
+                      </div>
+                      {meal.items.map((item, ii) => (
+                        <div key={ii} className="diet-gen-item">
+                          <div className="diet-gen-item-body">
+                            <div className="diet-gen-item-name">
+                              {item.food.nome}
+                              {item.food.id === -1 && <span className="diet-ia-badge"> IA</span>}
+                            </div>
+                            <div className="diet-gen-item-detail">
+                              {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
+                              {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                            </div>
+                          </div>
+                          <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )
+            })()}
           </div>
         </div>
 
