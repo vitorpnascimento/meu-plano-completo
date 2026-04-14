@@ -178,10 +178,11 @@ function calcDayMacros(
   return { cals: Math.round(cals), p: Math.round(p), c: Math.round(c), f: Math.round(f) }
 }
 
-function getFeedback(cals: number, calMeta: number, calMax: number) {
-  if (cals < calMeta) return { msg: `Você comeu pouco! Margem: +${calMeta - cals} kcal pra próximos dias ✅`, color: 'var(--warning)', badge: '🟡' }
-  if (cals <= calMax)  return { msg: 'Perfeito! Dia dentro da meta 🎯',                                           color: 'var(--success)', badge: '🟢' }
-  return                       { msg: `Passou da meta em ${cals - calMax} kcal. Pode compensar amanhã 💪`,        color: 'var(--warning)', badge: '🔴' }
+function getFeedback(cals: number, calMeta: number, _calMax: number) {
+  const diff = cals - calMeta
+  if (Math.abs(diff) <= 50) return { msg: 'No alvo! 🎯 Você atingiu sua meta!',                                       color: 'var(--success)', badge: '🟢' }
+  if (diff < 0)             return { msg: `Você comeu pouco! Margem: +${Math.abs(diff)} kcal pra próximos dias ✅`,   color: 'var(--warning)', badge: '🟡' }
+  return                           { msg: `Passou da meta em ${diff} kcal. Pode compensar amanhã 💪`,                 color: 'var(--warning)', badge: '🔴' }
 }
 
 function macroDesc(item: { kcal: number; p: number; c: number; f: number }) {
@@ -2132,13 +2133,15 @@ export default function Home() {
         <div className={`tab-content ${activeTab === 'hoje' ? 'active' : ''}`}>
 
           {(() => {
-            const diff  = totalCals - CAL_META
-            const color = diff < -200 ? 'var(--warning)' : diff > 200 ? '#e53935' : 'var(--success)'
-            const emoji = diff < -200 ? '🟡' : diff > 200 ? '🔴' : '🟢'
-            const text  = diff < 0
-              ? `Margem: -${Math.abs(diff)} kcal`
-              : diff > 0 ? `+${diff} kcal acima da meta`
-              : 'No alvo! 🎯'
+            const diff     = totalCals - CAL_META
+            const onTarget = Math.abs(diff) <= 50
+            const color    = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : '#e53935'
+            const emoji    = onTarget ? '🟢' : diff < 0 ? '🟡' : '🔴'
+            const text     = onTarget
+              ? 'No alvo! 🎯 Você atingiu sua meta!'
+              : diff < 0
+                ? `Você comeu pouco! Margem: +${Math.abs(diff)} kcal`
+                : `Passou da meta em +${diff} kcal`
             const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
             return (
               <div className="week-status-card" style={{ borderColor: color }}
