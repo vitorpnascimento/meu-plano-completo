@@ -72,6 +72,7 @@ export default function Home() {
   const [cardioTime, setCardioTime] = useState(0)
   const [isCardioRunning, setIsCardioRunning] = useState(false)
   const [mealCheckboxes, setMealCheckboxes] = useState([])
+  const [weightPhoto, setWeightPhoto] = useState<string>('')
 
   const getToday = () => new Date().toISOString().split('T')[0]
 
@@ -133,11 +134,20 @@ export default function Home() {
     saveData({ dayComplete: newDayComplete })
   }
 
-  const addWeight = (weight, date = null) => {
+  const addWeight = (weight: string, photo: string = '', date: string | null = null) => {
     const finalDate = date || getToday()
-    const newWeights = { ...weightsData, [finalDate]: parseFloat(weight) }
+    const entry = photo ? { peso: parseFloat(weight), foto: photo } : parseFloat(weight)
+    const newWeights = { ...weightsData, [finalDate]: entry }
     setWeightsData(newWeights)
     saveData({ weights: newWeights })
+  }
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setWeightPhoto(reader.result as string)
+    reader.readAsDataURL(file)
   }
 
   const addNote = (text) => {
@@ -307,13 +317,24 @@ export default function Home() {
           <div className="card">
             <div className="card-title">Registrar Peso</div>
             <input type="number" placeholder="Seu peso em kg" step="0.1" id="weight-input" />
-            <button 
+            <label className="photo-upload-label">
+              {weightPhoto ? '✓ Foto selecionada' : '📷 Adicionar foto (opcional)'}
+              <input type="file" accept="image/*" onChange={handlePhotoSelect} />
+            </label>
+            {weightPhoto && (
+              <div className="photo-preview-container">
+                <img src={weightPhoto} alt="Preview" className="photo-preview" />
+                <button className="photo-remove" onClick={() => setWeightPhoto('')}>✕</button>
+              </div>
+            )}
+            <button
               className="btn"
               onClick={() => {
                 const weight = (document.getElementById('weight-input') as HTMLInputElement).value
                 if (weight) {
-                  addWeight(weight)
+                  addWeight(weight, weightPhoto)
                   ;(document.getElementById('weight-input') as HTMLInputElement).value = ''
+                  setWeightPhoto('')
                 }
               }}
             >
@@ -323,12 +344,19 @@ export default function Home() {
 
           <div className="card">
             <div className="card-title">Histórico</div>
-            {Object.entries(weightsData).reverse().map(([date, weight]: any, idx) => (
-              <div key={date} style={{ padding: '12px', background: 'var(--dark)', borderRadius: '6px', marginBottom: '8px', borderLeft: '3px solid var(--primary)' }}>
-                <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--primary)' }}>{weight}kg</div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{new Date(date).toLocaleDateString('pt-BR')}</div>
-              </div>
-            ))}
+            {Object.entries(weightsData).reverse().map(([date, entry]: any) => {
+              const peso = typeof entry === 'object' ? entry.peso : entry
+              const foto = typeof entry === 'object' ? entry.foto : null
+              return (
+                <div key={date} className="weight-history-item">
+                  <div className="weight-history-info">
+                    <div style={{ fontSize: '18px', fontWeight: '600', color: 'var(--primary)' }}>{peso}kg</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{new Date(date).toLocaleDateString('pt-BR')}</div>
+                  </div>
+                  {foto && <img src={foto} alt={`Foto ${date}`} className="weight-history-photo" />}
+                </div>
+              )
+            })}
           </div>
 
           <div className="card">
