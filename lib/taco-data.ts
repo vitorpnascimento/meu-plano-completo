@@ -402,13 +402,23 @@ export const FOOD_UNITS: Record<number, { unit: string; unitWeight: number }> = 
 
 /** Formata o nome de um alimento TACO com sua unidade de medida natural,
  *  ou em gramas quando não há unidade específica. */
+/** Formata o nome de um alimento com unidade natural + grama.
+ *  Ex: "Ovo de galinha, cozido (2 un) 100g"  /  "Frango, filé, grelhado 180g" */
 export function formatTacoItemName(food: TacoFood, grams: number): string {
   const unitInfo = FOOD_UNITS[food.id]
   if (unitInfo && unitInfo.unitWeight > 0) {
     const qty = Math.max(1, Math.round(grams / unitInfo.unitWeight))
-    return `${food.nome} (${qty} ${unitInfo.unit})`
+    return `${food.nome} (${qty} ${unitInfo.unit}) ${grams}g`
   }
-  return `${food.nome} (${grams}g)`
+  return `${food.nome} ${grams}g`
+}
+
+/** Retorna a porção "natural" de um alimento TACO em gramas.
+ *  Para alimentos com unidade, usa o peso de 1 unidade.
+ *  Para demais alimentos, usa 100g. */
+export function naturalGrams(food: TacoFood): number {
+  const unitInfo = FOOD_UNITS[food.id]
+  return unitInfo ? unitInfo.unitWeight : 100
 }
 
 /** Encontra alternativas do banco TACO para um item da aba Hoje.

@@ -17,7 +17,7 @@ import {
 import LoginScreen from './components/LoginScreen'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
-  getTodaySubstitutes, formatTacoItemName,
+  getTodaySubstitutes, formatTacoItemName, naturalGrams, searchWithAI,
   BUDGET_IDS, FOOD_UNITS,
   type TacoFood, type GeneratedItem, type GeneratedMeal,
 } from '../lib/taco-data'
@@ -88,6 +88,16 @@ interface CalcResult {
   manter:   number
   emagrecer: number
   ganhar:   number
+}
+
+interface SubSearchResult {
+  food:   TacoFood
+  grams:  number
+  kcal:   number
+  p:      number
+  c:      number
+  f:      number
+  isAI?:  boolean
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
@@ -535,7 +545,11 @@ export default function Home() {
   const [dietSubs,      setDietSubs]      = useState<TacoFood[]>([])
 
   // ── Substituidores Hoje ───────────────────────────────────────────────────────
-  const [todaySubItem,  setTodaySubItem]  = useState<MealItem | null>(null)
+  const [todaySubItem,        setTodaySubItem]        = useState<MealItem | null>(null)
+  const [todaySubQuery,       setTodaySubQuery]       = useState('')
+  const [todaySubSearchRes,   setTodaySubSearchRes]   = useState<SubSearchResult[]>([])
+  const [todaySubSearching,   setTodaySubSearching]   = useState(false)
+  const subSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
@@ -1008,6 +1022,69 @@ export default function Home() {
     if (bio.idade)   setCalcIdade(bio.idade)
   }
 
+  // ── Ações: Busca no modal de substituição ─────────────────────────────────
+
+  const closeTodaySubModal = () => {
+    setTodaySubItem(null)
+    setTodaySubQuery('')
+    setTodaySubSearchRes([])
+    setTodaySubSearching(false)
+    if (subSearchTimeoutRef.current) clearTimeout(subSearchTimeoutRef.current)
+  }
+
+  const handleTodaySubSearch = (query: string) => {
+    setTodaySubQuery(query)
+    if (subSearchTimeoutRef.current) clearTimeout(subSearchTimeoutRef.current)
+
+    if (query.trim().length < 2) {
+      setTodaySubSearchRes([])
+      setTodaySubSearching(false)
+      return
+    }
+
+    // Busca imediata no TACO
+    const tacoHits = searchTACO(query)
+    if (tacoHits.length > 0) {
+      setTodaySubSearchRes(tacoHits.slice(0, 6).map(food => {
+        const g    = naturalGrams(food)
+        const mult = g / 100
+        return { food, grams: g, kcal: Math.round(food.kcal * mult), p: +(food.p * mult).toFixed(1), c: +(food.c * mult).toFixed(1), f: +(food.f * mult).toFixed(1), isAI: false }
+      }))
+      setTodaySubSearching(false)
+      return
+    }
+
+    // TACO vazio → IA fallback após debounce
+    setTodaySubSearchRes([])
+    setTodaySubSearching(true)
+    subSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const aiFood = await searchWithAI(query)
+        if (aiFood) {
+          setTodaySubSearchRes([{ food: aiFood, grams: 100, kcal: aiFood.kcal, p: aiFood.p, c: aiFood.c, f: aiFood.f, isAI: true }])
+        } else {
+          setTodaySubSearchRes([])
+        }
+      } catch { /* ignore */ } finally {
+        setTodaySubSearching(false)
+      }
+    }, 600)
+  }
+
+  const applyTodaySubFromSearch = (result: SubSearchResult) => {
+    if (!todaySubItem) return
+    const sub: SubOption = {
+      id:   newId(),
+      name: formatTacoItemName(result.food, result.grams),
+      kcal: result.kcal,
+      p:    result.p,
+      c:    result.c,
+      f:    result.f,
+    }
+    chooseSub(todaySubItem.id, sub)
+    closeTodaySubModal()
+  }
+
   const useDietCals = (cals: number, obj: 'emagrecer'|'manter'|'ganhar') => {
     setDietTarget(String(cals))
     setDietBudget(false)
@@ -1188,80 +1265,123 @@ export default function Home() {
 
       {/* ══ Modal: Substituir Alimento Hoje ══ */}
       {todaySubItem && (() => {
-        const display   = activeSubs[todaySubItem.id] ?? todaySubItem
-        const userAlts  = alternatives[todaySubItem.id] || []
-        const tacoAlts  = getTodaySubstitutes(display.kcal, todaySubItem.name)
+        const display      = activeSubs[todaySubItem.id] ?? todaySubItem
+        const originalKcal = display.kcal
+        const userAlts     = alternatives[todaySubItem.id] || []
+        const tacoAlts     = getTodaySubstitutes(originalKcal, todaySubItem.name)
+
+        const renderKcalDiff = (kcal: number) => {
+          const diff = kcal - originalKcal
+          if (Math.abs(diff) < 5) return null
+          const color = diff > 0 ? '#e53935' : 'var(--success)'
+          return <span className="sub-kcal-diff" style={{ color }}>{diff > 0 ? '+' : ''}{diff} kcal</span>
+        }
+
         return (
-          <div className="modal-overlay" onClick={() => setTodaySubItem(null)}>
+          <div className="modal-overlay" onClick={closeTodaySubModal}>
             <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
               <div className="modal-title">🔄 Substituir Alimento</div>
               <div className="diet-sub-original">
                 <strong>{display.name}</strong>
-                {display !== todaySubItem && <span style={{ color:'var(--text-secondary)', fontSize:12 }}> (sub ativa)</span>}
+                {activeSubs[todaySubItem.id] && <span style={{ color:'var(--text-secondary)', fontSize:12 }}> (sub ativa)</span>}
                 <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:3 }}>
-                  ~{display.kcal} kcal · P{display.p}g · C{display.c}g · G{display.f}g
+                  {originalKcal} kcal · P{display.p}g · C{display.c}g · G{display.f}g
                 </div>
               </div>
 
-              {/* Restores original if sub is active */}
+              {/* Restaurar original */}
               {activeSubs[todaySubItem.id] && (
                 <button className="taco-result-item" style={{ width:'100%' }}
-                  onClick={() => { chooseSub(todaySubItem.id, null); setTodaySubItem(null) }}>
+                  onClick={() => { chooseSub(todaySubItem.id, null); closeTodaySubModal() }}>
                   <div className="taco-result-name">↩ {todaySubItem.name} <span style={{ color:'var(--text-secondary)', fontWeight:400 }}>(original)</span></div>
                   <div className="taco-result-cat">{macroDesc(todaySubItem)}</div>
                 </button>
               )}
 
-              {/* User-defined alternatives */}
+              {/* Configurados pelo usuário */}
               {userAlts.filter(a => a.id !== activeSubs[todaySubItem.id]?.id).length > 0 && (
                 <>
                   <div className="sub-section-label">Configurados por você</div>
                   {userAlts.filter(a => a.id !== activeSubs[todaySubItem.id]?.id).map(alt => (
                     <button key={alt.id} className="taco-result-item" style={{ width:'100%' }}
-                      onClick={() => { chooseSub(todaySubItem.id, alt); setTodaySubItem(null) }}>
-                      <div className="taco-result-name">{alt.name}</div>
+                      onClick={() => { chooseSub(todaySubItem.id, alt); closeTodaySubModal() }}>
+                      <div className="taco-result-name">{alt.name} {renderKcalDiff(alt.kcal)}</div>
                       <div className="taco-result-cat">{macroDesc(alt)}</div>
                     </button>
                   ))}
                 </>
               )}
 
-              {/* TACO-based alternatives */}
+              {/* TACO — alternativas automáticas */}
               {tacoAlts.length > 0 && (
                 <>
-                  <div className="sub-section-label">Do banco TACO</div>
+                  <div className="sub-section-label">Sugestões do TACO</div>
                   <div className="taco-results">
                     {tacoAlts.map(alt => (
                       <button key={alt.food.id} className="taco-result-item"
                         onClick={() => {
-                          const sub: SubOption = {
-                            id:   newId(),
-                            name: formatTacoItemName(alt.food, alt.grams),
-                            kcal: alt.kcal, p: alt.p, c: alt.c, f: alt.f,
-                          }
+                          const sub: SubOption = { id:newId(), name:formatTacoItemName(alt.food, alt.grams), kcal:alt.kcal, p:alt.p, c:alt.c, f:alt.f }
                           chooseSub(todaySubItem.id, sub)
-                          setTodaySubItem(null)
+                          closeTodaySubModal()
                         }}>
                         <div className="taco-result-name">
                           {formatTacoItemName(alt.food, alt.grams)}
+                          {renderKcalDiff(alt.kcal)}
                           {BUDGET_IDS.has(alt.food.id) && <span className="diet-budget-badge"> 💰</span>}
                         </div>
-                        <div className="taco-result-cat">
-                          {alt.kcal} kcal · P{alt.p}g · C{alt.c}g · G{alt.f}g · {alt.food.cat}
-                        </div>
+                        <div className="taco-result-cat">{alt.kcal} kcal · P{alt.p}g · C{alt.c}g · G{alt.f}g</div>
                       </button>
                     ))}
                   </div>
                 </>
               )}
 
-              {userAlts.length === 0 && tacoAlts.length === 0 && !activeSubs[todaySubItem.id] && (
-                <div style={{ color:'var(--text-secondary)', fontSize:13, padding:'12px 0' }}>
-                  Nenhuma alternativa encontrada. Adicione substitutos em Config → Meu Cardápio.
-                </div>
-              )}
+              {/* ── Campo de Busca ── */}
+              <div className="sub-search-section">
+                <div className="sub-section-label">🔍 Buscar outro alimento</div>
+                <input
+                  type="text"
+                  className="login-input"
+                  placeholder="Ex: iogurte, atum, tofu, peixe..."
+                  value={todaySubQuery}
+                  autoComplete="off"
+                  onChange={e => handleTodaySubSearch(e.target.value)}
+                />
 
-              <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setTodaySubItem(null)}>
+                {todaySubSearching && (
+                  <div className="sub-search-loading">
+                    <span>🤖 Consultando IA...</span>
+                  </div>
+                )}
+
+                {todaySubSearchRes.length > 0 && (
+                  <div className="taco-results" style={{ marginTop:6 }}>
+                    {todaySubSearchRes.map((res, i) => (
+                      <button key={i} className="taco-result-item"
+                        onClick={() => applyTodaySubFromSearch(res)}>
+                        <div className="taco-result-name">
+                          {formatTacoItemName(res.food, res.grams)}
+                          {renderKcalDiff(res.kcal)}
+                          {res.isAI && <span className="diet-ia-badge"> IA</span>}
+                          {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                        </div>
+                        <div className="taco-result-cat">
+                          {res.kcal} kcal · P{res.p}g · C{res.c}g · G{res.f}g
+                          {!res.isAI && ` · ${res.food.cat}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {todaySubQuery.length >= 2 && !todaySubSearching && todaySubSearchRes.length === 0 && (
+                  <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:6 }}>
+                    Nenhum resultado para "{todaySubQuery}". Tente outra palavra.
+                  </div>
+                )}
+              </div>
+
+              <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={closeTodaySubModal}>
                 Fechar
               </button>
             </div>

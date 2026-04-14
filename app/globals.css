@@ -2069,3 +2069,77 @@ footer {
   font-size: 13px;
   margin-bottom: 6px;
 }
+
+/* ── Today Sub: calorie diff badge ─────────────────────────────────────── */
+
+.sub-kcal-diff {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.sub-kcal-diff.positive {
+  background: rgba(248, 116, 98, 0.15);
+  color: var(--warning);
+}
+.sub-kcal-diff.negative {
+  background: rgba(75, 206, 151, 0.15);
+  color: var(--success);
+}
+.sub-kcal-diff.neutral {
+  background: rgba(140, 155, 171, 0.12);
+  color: var(--text-secondary);
+}
+
+/* ── Today Sub: search section ─────────────────────────────────────────── */
+
+.sub-search-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.sub-search-section input {
+  width: 100%;
+  background: var(--dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  outline: none;
+  margin-bottom: 8px;
+}
+.sub-search-section input:focus {
+  border-color: var(--primary);
+  background: rgba(87, 157, 255, 0.04);
+}
+.sub-search-section input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* ── Today Sub: AI loading indicator ───────────────────────────────────── */
+
+.sub-search-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 4px;
+  font-style: italic;
+}
+.sub-search-loading::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
