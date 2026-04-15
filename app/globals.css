@@ -2645,3 +2645,106 @@ html.dark .config-section-body { border-top-color: #374151; }
   flex-wrap: wrap;
 }
 html.dark .regen-suggestion { background: rgba(96,165,250,0.08); border-color: rgba(96,165,250,0.3); }
+
+/* ── Config section title with description ── */
+.config-section-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.config-section-desc {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+/* ── Bottom navigation bar (mobile only) ── */
+.bottom-nav {
+  display: none; /* hidden on desktop */
+}
+
+@media (max-width: 767px) {
+  /* Show bottom nav, hide top tab bar */
+  .tabs { display: none !important; }
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 62px;
+    background: var(--card-bg);
+    border-top: 1px solid var(--border);
+    z-index: 150;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.07);
+  }
+  html.dark .bottom-nav {
+    background: #1F2937;
+    border-top-color: #374151;
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.3);
+  }
+
+  /* Increase body bottom padding to account for bottom nav */
+  body { padding-bottom: 80px; }
+
+  /* Setup banner: position above bottom nav */
+  .setup-progress-banner { padding-bottom: 6px; }
+
+  /* Container: remove top padding waste */
+  .container { padding-top: 0; }
+}
+
+.bottom-nav-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 6px 0;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.bottom-nav-btn.active {
+  color: var(--primary);
+}
+.bottom-nav-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.bottom-nav-label {
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+/* ── Mobile: improve card spacing and readability ── */
+@media (max-width: 767px) {
+  .card { border-radius: 10px; margin-bottom: 10px; }
+  .container { padding: 12px 12px 0; }
+  .config-section { margin-bottom: 8px; }
+  .config-section-header { padding: 12px 14px; }
+  .config-section-body { padding: 4px 12px 14px; }
+  .meal-collapse-header { padding: 12px 14px; }
+  .meal-collapse-body { padding: 8px 14px 14px; }
+  header { padding: 10px 16px; }
+  h1 { font-size: 18px; }
+  .subtitle { font-size: 11px; }
+  .macro-boxes { gap: 6px; }
+  .macro-box { padding: 10px 8px; }
+  .macro-box-val { font-size: 18px; }
+  .week-status-card { padding: 12px 14px; }
+  .calc-options-grid { grid-template-columns: 1fr; gap: 8px; }
+  .deficit-row { flex-direction: column; gap: 8px; }
+  .deficit-btn { min-width: unset; }
+}

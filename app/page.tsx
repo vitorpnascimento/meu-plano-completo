@@ -567,6 +567,12 @@ export default function Home() {
   const [todaySubSearching,   setTodaySubSearching]   = useState(false)
   const subSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Busca no modal de substituição de dieta gerada ────────────────────────────
+  const [dietSubSearchQuery, setDietSubSearchQuery] = useState('')
+  const [dietSubSearchRes,   setDietSubSearchRes]   = useState<SubSearchResult[]>([])
+  const [dietSubSearching,   setDietSubSearching]   = useState(false)
+  const dietSubSearchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const getToday = () => new Date().toISOString().split('T')[0]
   const CAL_META = userGoals.cals
   const CAL_MAX  = userGoals.cals + 200
@@ -1216,7 +1222,9 @@ export default function Home() {
     const ng = { ...userGoals, cals }
     setUserGoals(ng)
     save({ userGoals: ng })
-    setActiveTab('gerar-dieta')
+    // Navega para Config > Gerar Dieta
+    setActiveTab('config')
+    setConfigSections(s => ({ ...s, dieta: true, calc: false }))
     // Avança onboarding: calc → dieta
     if (onboardingStep === 2) setOnboardingStep(3)
   }
@@ -1235,6 +1243,10 @@ export default function Home() {
     const subs = getSubstitutes(item.food, item.grams, dietBudget)
     setDietSubs(subs)
     setDietSubModal({ mealIdx, itemIdx })
+    setDietSubSearchQuery('')
+    setDietSubSearchRes([])
+    setDietSubSearching(false)
+    if (dietSubSearchTimeoutRef.current) clearTimeout(dietSubSearchTimeoutRef.current)
   }
 
   const applyDietSub = (food: TacoFood) => {
@@ -1250,6 +1262,53 @@ export default function Home() {
       p:    +(food.p * mult).toFixed(1),
       c:    +(food.c * mult).toFixed(1),
       f:    +(food.f * mult).toFixed(1),
+    }
+    const newDiet = generatedDiet.map((m, mi) => {
+      if (mi !== mealIdx) return m
+      const items = m.items.map((it, ii) => ii === itemIdx ? newItem : it)
+      return { ...m, items, actualKcal: items.reduce((s, it) => s + it.kcal, 0) }
+    })
+    setGeneratedDiet(newDiet)
+    setDietSubModal(null)
+  }
+
+  const handleDietSubSearch = (query: string) => {
+    setDietSubSearchQuery(query)
+    if (dietSubSearchTimeoutRef.current) clearTimeout(dietSubSearchTimeoutRef.current)
+    if (query.trim().length < 2) {
+      setDietSubSearchRes([]); setDietSubSearching(false); return
+    }
+    const tacoHits = searchTACO(query)
+    if (tacoHits.length > 0) {
+      setDietSubSearchRes(tacoHits.slice(0, 6).map(food => {
+        const g = naturalGrams(food); const mult = g / 100
+        return { food, grams: g, kcal: Math.round(food.kcal * mult), p: +(food.p * mult).toFixed(1), c: +(food.c * mult).toFixed(1), f: +(food.f * mult).toFixed(1), isAI: false }
+      }))
+      setDietSubSearching(false); return
+    }
+    setDietSubSearchRes([]); setDietSubSearching(true)
+    dietSubSearchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const aiFood = await searchWithAI(query)
+        setDietSubSearchRes(aiFood ? [{ food: aiFood, grams: 100, kcal: aiFood.kcal, p: aiFood.p, c: aiFood.c, f: aiFood.f, isAI: true }] : [])
+      } catch { /* ignore */ } finally { setDietSubSearching(false) }
+    }, 600)
+  }
+
+  const applyDietSubFromSearch = (result: SubSearchResult) => {
+    if (!dietSubModal || !generatedDiet) return
+    const { mealIdx, itemIdx } = dietSubModal
+    const original = generatedDiet[mealIdx].items[itemIdx]
+    // Escala a porção para manter as mesmas calorias do item original
+    const rawGrams = result.food.kcal > 0 ? (original.kcal / result.food.kcal) * 100 : result.grams
+    const grams    = Math.max(10, Math.min(600, Math.round(rawGrams / 5) * 5))
+    const mult     = grams / 100
+    const newItem: GeneratedItem = {
+      food: result.food, grams,
+      kcal: Math.round(result.food.kcal * mult),
+      p:    +(result.food.p * mult).toFixed(1),
+      c:    +(result.food.c * mult).toFixed(1),
+      f:    +(result.food.f * mult).toFixed(1),
     }
     const newDiet = generatedDiet.map((m, mi) => {
       if (mi !== mealIdx) return m
@@ -1556,37 +1615,83 @@ export default function Home() {
         return (
           <div className="modal-overlay" onClick={() => setDietSubModal(null)}>
             <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-              <div className="modal-title">🔄 Substituir Alimento</div>
+              <div className="modal-title">🔄 Substituir Alimento na Dieta</div>
               <div className="diet-sub-original">
                 <strong>{item.food.nome}</strong> · {item.grams}g · {item.kcal} kcal
                 <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
-                  Alternativas com calorias equivalentes (~{item.kcal} kcal)
+                  A porção será ajustada para manter ~{item.kcal} kcal
                 </div>
               </div>
-              {dietSubs.length === 0 ? (
-                <div style={{ color:'var(--text-secondary)', fontSize:13, padding:'16px 0' }}>
-                  Nenhuma alternativa na mesma categoria. Tente editar manualmente no cardápio.
-                </div>
-              ) : (
-                <div className="taco-results" style={{ marginTop:10 }}>
-                  {dietSubs.map(sub => {
-                    const rawG = sub.kcal > 0 ? (item.kcal / sub.kcal) * 100 : 50
-                    const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
-                    const mult = g / 100
-                    return (
-                      <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
-                        <div className="taco-result-name">
-                          {sub.nome} · {g}g
-                          {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
-                        </div>
-                        <div className="taco-result-cat">
-                          {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
+
+              {/* Sugestões automáticas da mesma categoria */}
+              {dietSubs.length > 0 && (
+                <>
+                  <div className="sub-section-label">Sugestões similares</div>
+                  <div className="taco-results">
+                    {dietSubs.map(sub => {
+                      const rawG = sub.kcal > 0 ? (item.kcal / sub.kcal) * 100 : 50
+                      const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+                      const mult = g / 100
+                      return (
+                        <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
+                          <div className="taco-result-name">
+                            {sub.nome} · {g}g
+                            {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
+                          </div>
+                          <div className="taco-result-cat">
+                            {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
               )}
+
+              {/* Campo de busca livre no TACO */}
+              <div className="sub-search-section">
+                <div className="sub-section-label">🔍 Buscar qualquer alimento</div>
+                <input
+                  type="text"
+                  className="login-input"
+                  placeholder="Ex: batata doce, atum, tofu, peixe..."
+                  value={dietSubSearchQuery}
+                  autoComplete="off"
+                  onChange={e => handleDietSubSearch(e.target.value)}
+                />
+                {dietSubSearching && (
+                  <div className="sub-search-loading"><span>🤖 Consultando IA...</span></div>
+                )}
+                {dietSubSearchRes.length > 0 && (
+                  <div className="taco-results" style={{ marginTop:6 }}>
+                    {dietSubSearchRes.map((res, i) => {
+                      // Calcular porção equivalente ao item original
+                      const rawG = res.food.kcal > 0 ? (item.kcal / res.food.kcal) * 100 : res.grams
+                      const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+                      const mult = g / 100
+                      return (
+                        <button key={i} className="taco-result-item" onClick={() => applyDietSubFromSearch(res)}>
+                          <div className="taco-result-name">
+                            {res.food.nome} · {g}g
+                            {res.isAI && <span className="diet-ia-badge"> IA</span>}
+                            {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                          </div>
+                          <div className="taco-result-cat">
+                            {Math.round(res.food.kcal * mult)} kcal · P{+(res.food.p * mult).toFixed(1)}g · C{+(res.food.c * mult).toFixed(1)}g · G{+(res.food.f * mult).toFixed(1)}g
+                            {!res.isAI && ` · ${res.food.cat}`}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {dietSubSearchQuery.length >= 2 && !dietSubSearching && dietSubSearchRes.length === 0 && (
+                  <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:6 }}>
+                    Nenhum resultado para "{dietSubSearchQuery}". Tente outra palavra.
+                  </div>
+                )}
+              </div>
+
               <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setDietSubModal(null)}>
                 Cancelar
               </button>
@@ -2181,7 +2286,11 @@ export default function Home() {
               </span>
             </div>
             <button className="btn" style={{ width: '100%' }}
-              onClick={() => { setOnboardingStep(2); setActiveTab('calculadora') }}>
+              onClick={() => {
+                setOnboardingStep(2)
+                setActiveTab('config')
+                setConfigSections(s => ({ ...s, calc: true }))
+              }}>
               🧮 Calcular meta e gerar dieta
             </button>
             <button className="btn btn-cancel" style={{ marginTop: 10, width: '100%' }}
@@ -2235,27 +2344,20 @@ export default function Home() {
       )}
 
       <div className="container">
+        {/* Tab bar — oculto no mobile (substituído pela bottom nav) */}
         <div className="tabs">
           {[
-            { id:'hoje',         label:'📋 Cardápio' },
-            { id:'peso',         label:'⚖️ Peso'    },
-            { id:'estatísticas', label:'📊 Stats'    },
-            { id:'config',       label:'⚙️ Config'  },
+            { id:'hoje',         label:'📋 Hoje'   },
+            { id:'peso',         label:'⚖️ Peso'  },
+            { id:'estatísticas', label:'📊 Stats'  },
+            { id:'config',       label:'⚙️ Config' },
           ].map(t => (
             <button key={t.id}
               className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
-              disabled={inAutoSetup}
+              disabled={inAutoSetup && t.id !== 'config'}
               onClick={() => setActiveTab(t.id)}>
               {t.label}
             </button>
-          ))}
-          <div className="tabs-divider" />
-          {[
-            { id:'calculadora', label:'Calc' },
-            { id:'gerar-dieta', label:'Dieta' },
-          ].map(t => (
-            <button key={t.id} className={`tab-btn tab-btn-secondary ${activeTab === t.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(t.id)}>{t.label}</button>
           ))}
         </div>
 
@@ -2470,271 +2572,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ══════════════════════════════════════════════════════ CALCULADORA */}
-        <div className={`tab-content ${activeTab === 'calculadora' ? 'active' : ''}`}>
-          {onboardingStep === 2 && (
-            <div className="onboarding-banner">
-              <span className="onboarding-step-badge">Passo 1 / 3</span>
-              <div className="onboarding-banner-text">
-                <strong>Calcule sua meta calórica.</strong> Preencha seus dados e clique em <strong>"Calcular"</strong>.
-                Depois use o botão <strong>"Usar →"</strong> para continuar.
-              </div>
-            </div>
-          )}
-          <div className="card">
-            <div className="card-title">🧮 Calculadora de Nutrição</div>
-
-            {/* ── Bioimpedância (opcional) ── */}
-            <div className="bio-section">
-              <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
-                📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
-              </button>
-              {showBio && (
-                <div className="bio-content">
-                  <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
-                    <div className="bio-upload-icon">📊</div>
-                    <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
-                    <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
-                  </div>
-                  <input ref={bioFileRef} type="file" accept=".txt,.csv,.text"
-                    style={{ display:'none' }}
-                    onChange={e => {
-                      const f = e.target.files?.[0]
-                      if (f) f.text().then(applyBioFile)
-                    }} />
-                  <div className="calc-field" style={{ marginTop:10 }}>
-                    <label className="calc-label">% Gordura Corporal <span className="calc-unit">(se conhecido)</span></label>
-                    <input type="number" className="login-input" value={calcGordura}
-                      placeholder="Ex: 22.5"
-                      onChange={e => setCalcGordura(e.target.value)} />
-                  </div>
-                  {calcGordura && (
-                    <div className="bio-formula-note">
-                      ✅ Usando Katch-McArdle (mais preciso com % gordura)
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ── Dados principais ── */}
-            <div className="calc-grid" style={{ marginTop:12 }}>
-              {([
-                { label:'Peso', unit:'kg',    val:calcPeso,   set:setCalcPeso   },
-                { label:'Altura', unit:'cm',  val:calcAltura, set:setCalcAltura },
-                { label:'Idade', unit:'anos', val:calcIdade,  set:setCalcIdade  },
-              ] as { label:string; unit:string; val:string; set:(v:string)=>void }[]).map(({ label, unit, val, set }) => (
-                <div key={label} className="calc-field">
-                  <label className="calc-label">{label} <span className="calc-unit">({unit})</span></label>
-                  <input type="number" className="login-input" value={val}
-                    onChange={e => set(e.target.value)} placeholder="0" />
-                </div>
-              ))}
-              <div className="calc-field">
-                <label className="calc-label">Sexo</label>
-                <select className="login-input" value={calcSexo} onChange={e => setCalcSexo(e.target.value as 'M'|'F')}>
-                  <option value="M">Masculino</option>
-                  <option value="F">Feminino</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="calc-field" style={{ marginTop:10 }}>
-              <label className="calc-label">Nível de Atividade</label>
-              <select className="login-input" value={calcAtividade}
-                onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
-                <option value="sed">Sedentário — pouco ou nenhum exercício</option>
-                <option value="leve">Leve — exercício 1–3×/semana</option>
-                <option value="mod">Moderado — exercício 3–5×/semana</option>
-                <option value="int">Intenso — exercício 5–7×/semana</option>
-                <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
-              </select>
-            </div>
-
-            <div className="calc-field" style={{ marginTop:10 }}>
-              <label className="calc-label">Objetivo Principal</label>
-              <div className="calc-obj-row">
-                {([
-                  { v:'emagrecer', label:'📉 Emagrecer' },
-                  { v:'manter',    label:'➡️ Manter'    },
-                  { v:'ganhar',    label:'📈 Ganhar'     },
-                ] as const).map(({ v, label }) => (
-                  <button key={v}
-                    className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
-                    onClick={() => setCalcObjetivo(v)}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
-              disabled={!calcPeso || !calcAltura || !calcIdade}>
-              🧮 Calcular
-            </button>
-
-            {calcResult && (
-              <div className="calc-result-box">
-                <div className="calc-result-imc" style={{ color: calcResult.imcColor }}>
-                  IMC: <strong>{calcResult.imc}</strong> — {calcResult.imcClass}
-                </div>
-                <div className="calc-result-row">
-                  <span>Taxa Metabólica Basal (TMB){calcGordura ? ' · Katch-McArdle' : ''}</span>
-                  <span><strong>{calcResult.tmb.toLocaleString('pt-BR')}</strong> kcal/dia</span>
-                </div>
-                <div className="calc-result-row">
-                  <span>Gasto Total Diário (TDEE)</span>
-                  <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
-                </div>
-
-                {/* Cartões Emagrecer / Manter / Ganhar */}
-                <div className="calc-options-grid">
-                  {([
-                    { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/semana' },
-                    { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
-                    { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/semana' },
-                  ] as const).map(({ obj, label, val, desc }) => (
-                    <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
-                      <div className="calc-option-label">{label}</div>
-                      <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
-                      <div className="calc-option-desc">{desc}</div>
-                      <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
-                        onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>
-                        Usar →
-                      </button>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Seletor de Déficit (para Emagrecer) */}
-                {calcObjetivo === 'emagrecer' && (
-                  <div className="deficit-section">
-                    <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
-                    <div className="deficit-row">
-                      {([
-                        { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
-                        { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
-                        { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
-                      ] as const).map(({ id, label, pct, desc }) => {
-                        const cals = Math.round(calcResult.tdee * (1 - pct / 100))
-                        return (
-                          <button key={id}
-                            className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
-                            onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
-                            <div className="deficit-btn-label">{label} −{pct}%</div>
-                            <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
-                            <div className="deficit-btn-desc">{desc}</div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* ══════════════════════════════════════════════════════ GERAR DIETA */}
-        <div className={`tab-content ${activeTab === 'gerar-dieta' ? 'active' : ''}`}>
-          {onboardingStep === 3 && (
-            <div className="onboarding-banner">
-              <span className="onboarding-step-badge">Passo 2 / 3</span>
-              <div className="onboarding-banner-text">
-                <strong>Quase lá!</strong> Clique em <strong>"Gerar Dieta Automaticamente"</strong>,
-                revise os alimentos e clique <strong>"Usar e Salvar no Cardápio"</strong>.
-              </div>
-            </div>
-          )}
-          <div className="card">
-            <div className="card-title">🍽️ Gerar Dieta Automática</div>
-
-            <div className="calc-field">
-              <label className="calc-label">Meta calórica diária</label>
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <input type="number" className="login-input" style={{ flex:1 }}
-                  value={dietTarget} onChange={e => setDietTarget(e.target.value)}
-                  placeholder="Ex: 1600" />
-                <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
-              </div>
-              <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
-                Use a Calculadora para obter o valor ideal para você.
-              </div>
-            </div>
-
-            <div className="calc-field" style={{ marginTop:12 }}>
-              <label className="calc-label">Preferência de alimentos</label>
-              <div className="calc-obj-row">
-                <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`}
-                  onClick={() => setDietBudget(false)}>
-                  ✨ Melhor qualidade
-                </button>
-                <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`}
-                  onClick={() => setDietBudget(true)}>
-                  💰 Simples / Barato
-                </button>
-              </div>
-            </div>
-
-            <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
-              disabled={!dietTarget || parseInt(dietTarget) < 500}>
-              🚀 Gerar Dieta Automaticamente
-            </button>
-
-            {generatedDiet && (() => {
-              const totalKcal = generatedDiet.reduce((s, m) => s + m.actualKcal, 0)
-              const target    = parseInt(dietTarget) || 1
-              const totalP    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.p, 0)
-              const totalC    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.c, 0)
-              const totalF    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0)
-              return (
-                <>
-                  <div className="diet-gen-summary">
-                    <div className="diet-gen-total">
-                      {totalKcal.toLocaleString('pt-BR')} kcal
-                      <span className="diet-gen-pct"> ({Math.round(totalKcal / target * 100)}% da meta)</span>
-                    </div>
-                    <div className="diet-gen-macros-row">
-                      <span>P {totalP.toFixed(0)}g</span>
-                      <span>C {totalC.toFixed(0)}g</span>
-                      <span>G {totalF.toFixed(0)}g</span>
-                    </div>
-                    <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
-                      💾 Salvar como Meu Cardápio
-                    </button>
-                  </div>
-
-                  {generatedDiet.map((meal, mi) => (
-                    <div key={meal.mealId} className="diet-gen-meal">
-                      <div className="diet-gen-meal-header">
-                        <span className="diet-gen-meal-title">{meal.title}</span>
-                        <span className="diet-gen-meal-kcal">
-                          {meal.actualKcal} kcal
-                          <span className="diet-gen-pct"> ({Math.round(meal.actualKcal / target * 100)}%)</span>
-                        </span>
-                      </div>
-                      {meal.items.map((item, ii) => (
-                        <div key={ii} className="diet-gen-item">
-                          <div className="diet-gen-item-body">
-                            <div className="diet-gen-item-name">
-                              {item.food.nome}
-                              {item.food.id === -1 && <span className="diet-ia-badge"> IA</span>}
-                            </div>
-                            <div className="diet-gen-item-detail">
-                              {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
-                              {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
-                            </div>
-                          </div>
-                          <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </>
-              )
-            })()}
-          </div>
-        </div>
+        {/* Calculadora e Gerar Dieta foram movidos para dentro de Config (accordion) */}
 
         {/* ══════════════════════════════════════════════════════ ESTATÍSTICAS */}
         <div className={`tab-content ${activeTab === 'estatísticas' ? 'active' : ''}`}>
@@ -2996,7 +2834,10 @@ export default function Home() {
           {firebaseConfigured && authUser && (
             <div className="config-section">
               <div className="config-section-header" onClick={() => toggleConfigSection('conta')}>
-                <span>👤 Minha Conta</span>
+                <div className="config-section-title-group">
+                  <span>👤 Minha Conta</span>
+                  <span className="config-section-desc">Gerencie login e sincronização</span>
+                </div>
                 <span className={`config-section-arrow ${configSections.conta ? 'open' : ''}`}>▼</span>
               </div>
               {configSections.conta && (
@@ -3020,15 +2861,17 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Seção: Minhas Metas ── */}
+          {/* ── Seção: Minha Meta ── */}
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('metas')}>
-              <span>🎯 Minhas Metas</span>
+              <div className="config-section-title-group">
+                <span>🎯 Minha Meta</span>
+                <span className="config-section-desc">Defina seu objetivo calórico</span>
+              </div>
               <span className={`config-section-arrow ${configSections.metas ? 'open' : ''}`}>▼</span>
             </div>
             {configSections.metas && (
               <div className="config-section-body">
-                {/* Sugestão de regerar dieta quando meta calórica muda */}
                 {suggestRegen && (
                   <div className="regen-suggestion">
                     <div>🍽️ Sua meta calórica mudou para <strong>{userGoals.cals} kcal/dia</strong>. Deseja gerar um novo cardápio automaticamente?</div>
@@ -3036,13 +2879,10 @@ export default function Home() {
                       <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => {
                         setDietTarget(String(userGoals.cals))
                         setGeneratedDiet(generateDiet(userGoals.cals, dietBudget))
-                        setActiveTab('gerar-dieta')
+                        setConfigSections(s => ({ ...s, dieta: true }))
                         setSuggestRegen(false)
-                      }}>
-                        ✓ Gerar novo cardápio
-                      </button>
-                      <button className="btn btn-small btn-cancel" style={{ width: 'auto' }}
-                        onClick={() => setSuggestRegen(false)}>
+                      }}>✓ Gerar novo cardápio</button>
+                      <button className="btn btn-small btn-cancel" style={{ width: 'auto' }} onClick={() => setSuggestRegen(false)}>
                         ✗ Manter atual
                       </button>
                     </div>
@@ -3066,10 +2906,266 @@ export default function Home() {
             )}
           </div>
 
+          {/* ── Seção: Calcular ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('calc')}>
+              <div className="config-section-title-group">
+                <span>🧮 Calcular</span>
+                <span className="config-section-desc">Recalcule seus dados nutricionais</span>
+              </div>
+              <span className={`config-section-arrow ${configSections.calc ? 'open' : ''}`}>▼</span>
+            </div>
+            {configSections.calc && (
+              <div className="config-section-body">
+                {onboardingStep === 2 && (
+                  <div className="onboarding-banner" style={{ marginBottom:12, marginTop:8 }}>
+                    <span className="onboarding-step-badge">Passo 1 / 2</span>
+                    <div className="onboarding-banner-text">
+                      <strong>Calcule sua meta calórica.</strong> Preencha seus dados e clique em <strong>"Calcular"</strong>.
+                      Depois use o botão <strong>"Usar →"</strong> para continuar.
+                    </div>
+                  </div>
+                )}
+                {/* Bioimpedância */}
+                <div className="bio-section" style={{ marginTop:8 }}>
+                  <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
+                    📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
+                  </button>
+                  {showBio && (
+                    <div className="bio-content">
+                      <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
+                        <div className="bio-upload-icon">📊</div>
+                        <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
+                        <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
+                      </div>
+                      <input ref={bioFileRef} type="file" accept=".txt,.csv,.text" style={{ display:'none' }}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(applyBioFile) }} />
+                      <div className="calc-field" style={{ marginTop:10 }}>
+                        <label className="calc-label">% Gordura Corporal <span className="calc-unit">(se conhecido)</span></label>
+                        <input type="number" className="login-input" value={calcGordura} placeholder="Ex: 22.5"
+                          onChange={e => setCalcGordura(e.target.value)} />
+                      </div>
+                      {calcGordura && <div className="bio-formula-note">✅ Usando Katch-McArdle (mais preciso com % gordura)</div>}
+                    </div>
+                  )}
+                </div>
+                {/* Dados principais */}
+                <div className="calc-grid" style={{ marginTop:12 }}>
+                  {([
+                    { label:'Peso', unit:'kg',    val:calcPeso,   set:setCalcPeso   },
+                    { label:'Altura', unit:'cm',  val:calcAltura, set:setCalcAltura },
+                    { label:'Idade', unit:'anos', val:calcIdade,  set:setCalcIdade  },
+                  ] as { label:string; unit:string; val:string; set:(v:string)=>void }[]).map(({ label, unit, val, set }) => (
+                    <div key={label} className="calc-field">
+                      <label className="calc-label">{label} <span className="calc-unit">({unit})</span></label>
+                      <input type="number" className="login-input" value={val} onChange={e => set(e.target.value)} placeholder="0" />
+                    </div>
+                  ))}
+                  <div className="calc-field">
+                    <label className="calc-label">Sexo</label>
+                    <select className="login-input" value={calcSexo} onChange={e => setCalcSexo(e.target.value as 'M'|'F')}>
+                      <option value="M">Masculino</option>
+                      <option value="F">Feminino</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="calc-field" style={{ marginTop:10 }}>
+                  <label className="calc-label">Nível de Atividade</label>
+                  <select className="login-input" value={calcAtividade} onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
+                    <option value="sed">Sedentário — pouco ou nenhum exercício</option>
+                    <option value="leve">Leve — exercício 1–3×/semana</option>
+                    <option value="mod">Moderado — exercício 3–5×/semana</option>
+                    <option value="int">Intenso — exercício 5–7×/semana</option>
+                    <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
+                  </select>
+                </div>
+                <div className="calc-field" style={{ marginTop:10 }}>
+                  <label className="calc-label">Objetivo Principal</label>
+                  <div className="calc-obj-row">
+                    {([
+                      { v:'emagrecer', label:'📉 Emagrecer' },
+                      { v:'manter',    label:'➡️ Manter'    },
+                      { v:'ganhar',    label:'📈 Ganhar'     },
+                    ] as const).map(({ v, label }) => (
+                      <button key={v} className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
+                        onClick={() => setCalcObjetivo(v)}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+                <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
+                  disabled={!calcPeso || !calcAltura || !calcIdade}>
+                  🧮 Calcular
+                </button>
+                {calcResult && (
+                  <div className="calc-result-box">
+                    <div className="calc-result-imc" style={{ color: calcResult.imcColor }}>
+                      IMC: <strong>{calcResult.imc}</strong> — {calcResult.imcClass}
+                    </div>
+                    <div className="calc-result-row">
+                      <span>Taxa Metabólica Basal (TMB){calcGordura ? ' · Katch-McArdle' : ''}</span>
+                      <span><strong>{calcResult.tmb.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                    </div>
+                    <div className="calc-result-row">
+                      <span>Gasto Total Diário (TDEE)</span>
+                      <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                    </div>
+                    <div className="calc-options-grid">
+                      {([
+                        { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/sem' },
+                        { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
+                        { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/sem' },
+                      ] as const).map(({ obj, label, val, desc }) => (
+                        <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
+                          <div className="calc-option-label">{label}</div>
+                          <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
+                          <div className="calc-option-desc">{desc}</div>
+                          <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
+                            onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>Usar →</button>
+                        </div>
+                      ))}
+                    </div>
+                    {calcObjetivo === 'emagrecer' && (
+                      <div className="deficit-section">
+                        <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
+                        <div className="deficit-row">
+                          {([
+                            { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
+                            { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
+                            { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
+                          ] as const).map(({ id, label, pct, desc }) => {
+                            const cals = Math.round(calcResult.tdee * (1 - pct / 100))
+                            return (
+                              <button key={id} className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
+                                onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
+                                <div className="deficit-btn-label">{label} −{pct}%</div>
+                                <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
+                                <div className="deficit-btn-desc">{desc}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Seção: Gerar Dieta ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('dieta')}>
+              <div className="config-section-title-group">
+                <span>🍽️ Gerar Dieta</span>
+                <span className="config-section-desc">Monte seu cardápio automático</span>
+              </div>
+              <span className={`config-section-arrow ${configSections.dieta ? 'open' : ''}`}>▼</span>
+            </div>
+            {configSections.dieta && (
+              <div className="config-section-body">
+                {onboardingStep === 3 && (
+                  <div className="onboarding-banner" style={{ marginBottom:12, marginTop:8 }}>
+                    <span className="onboarding-step-badge">Passo 2 / 2</span>
+                    <div className="onboarding-banner-text">
+                      <strong>Quase lá!</strong> Clique em <strong>"Gerar Dieta"</strong>,
+                      revise os alimentos e clique <strong>"Salvar como Meu Cardápio"</strong>.
+                    </div>
+                  </div>
+                )}
+                <div className="calc-field" style={{ marginTop:8 }}>
+                  <label className="calc-label">Meta calórica diária</label>
+                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    <input type="number" className="login-input" style={{ flex:1 }}
+                      value={dietTarget} onChange={e => setDietTarget(e.target.value)} placeholder="Ex: 1600" />
+                    <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
+                    Use <strong>Calcular</strong> acima para obter o valor ideal para você.
+                  </div>
+                </div>
+                <div className="calc-field" style={{ marginTop:12 }}>
+                  <label className="calc-label">Preferência de alimentos</label>
+                  <div className="calc-obj-row">
+                    <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}>✨ Melhor qualidade</button>
+                    <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}>💰 Simples / Barato</button>
+                  </div>
+                </div>
+                <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
+                  disabled={!dietTarget || parseInt(dietTarget) < 500}>
+                  🚀 Gerar Dieta Automaticamente
+                </button>
+
+                {generatedDiet && (() => {
+                  const totalKcal = generatedDiet.reduce((s, m) => s + m.actualKcal, 0)
+                  const target    = parseInt(dietTarget) || 1
+                  const totalP    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.p, 0)
+                  const totalC    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.c, 0)
+                  const totalF    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0)
+                  const diff      = totalKcal - target
+                  const diffColor = Math.abs(diff) <= 100 ? 'var(--success)' : diff > 0 ? 'var(--error)' : 'var(--warning)'
+                  const diffText  = Math.abs(diff) <= 100 ? '✅ No alvo' : diff > 0 ? `+${diff} kcal acima` : `${Math.abs(diff)} kcal abaixo`
+                  return (
+                    <>
+                      <div className="diet-gen-summary">
+                        <div className="diet-gen-total">
+                          {totalKcal.toLocaleString('pt-BR')} kcal
+                          <span className="diet-gen-pct" style={{ color: diffColor }}> · {diffText}</span>
+                        </div>
+                        <div className="diet-gen-macros-row">
+                          <span>P {totalP.toFixed(0)}g</span>
+                          <span>C {totalC.toFixed(0)}g</span>
+                          <span>G {totalF.toFixed(0)}g</span>
+                        </div>
+                        {Math.abs(diff) > 150 && (
+                          <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
+                            🔄 Reajustar para meta
+                          </button>
+                        )}
+                        <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
+                          💾 Salvar como Meu Cardápio
+                        </button>
+                      </div>
+
+                      {generatedDiet.map((meal, mi) => (
+                        <div key={meal.mealId} className="diet-gen-meal">
+                          <div className="diet-gen-meal-header">
+                            <span className="diet-gen-meal-title">{meal.title}</span>
+                            <span className="diet-gen-meal-kcal">
+                              {meal.actualKcal} kcal
+                              <span className="diet-gen-pct"> ({Math.round(meal.actualKcal / target * 100)}%)</span>
+                            </span>
+                          </div>
+                          {meal.items.map((item, ii) => (
+                            <div key={ii} className="diet-gen-item">
+                              <div className="diet-gen-item-body">
+                                <div className="diet-gen-item-name">
+                                  {item.food.nome}
+                                  {item.food.id === -1 && <span className="diet-ia-badge"> IA</span>}
+                                </div>
+                                <div className="diet-gen-item-detail">
+                                  {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
+                                  {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                                </div>
+                              </div>
+                              <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* ── Seção: Meu Cardápio ── */}
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('cardapio')}>
-              <span>🍽️ Meu Cardápio</span>
+              <div className="config-section-title-group">
+                <span>📋 Meu Cardápio</span>
+                <span className="config-section-desc">Edite e organize seus alimentos</span>
+              </div>
               <span className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`}>▼</span>
             </div>
             {configSections.cardapio && (
@@ -3100,13 +3196,9 @@ export default function Home() {
                     ))}
                     <div style={{ display:'flex', gap:6, marginTop:8 }}>
                       <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                        onClick={() => openItemModal('add', mealIdx)}>
-                        + Adicionar manual
-                      </button>
+                        onClick={() => openItemModal('add', mealIdx)}>+ Adicionar manual</button>
                       <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                        onClick={() => openTACO(mealIdx)}>
-                        🥗 Buscar TACO
-                      </button>
+                        onClick={() => openTACO(mealIdx)}>🥗 Buscar TACO</button>
                     </div>
                   </div>
                 ))}
@@ -3114,10 +3206,13 @@ export default function Home() {
             )}
           </div>
 
-          {/* ── Seção: Gerenciar Substituidores ── */}
+          {/* ── Seção: Substituidores ── */}
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('subs')}>
-              <span>🔄 Gerenciar Substituidores</span>
+              <div className="config-section-title-group">
+                <span>🔄 Substituidores</span>
+                <span className="config-section-desc">Gerencie alternativas por alimento</span>
+              </div>
               <span className={`config-section-arrow ${configSections.subs ? 'open' : ''}`}>▼</span>
             </div>
             {configSections.subs && (
@@ -3154,6 +3249,24 @@ export default function Home() {
 
         </div>
       </div>
+
+      {/* ══ Bottom Navigation (mobile only) ══ */}
+      <nav className="bottom-nav">
+        {[
+          { id:'hoje',         icon:'📋', label:'Hoje'   },
+          { id:'peso',         icon:'⚖️', label:'Peso'   },
+          { id:'estatísticas', icon:'📊', label:'Stats'  },
+          { id:'config',       icon:'⚙️', label:'Config' },
+        ].map(t => (
+          <button key={t.id}
+            className={`bottom-nav-btn ${activeTab === t.id ? 'active' : ''}`}
+            disabled={inAutoSetup && t.id !== 'config'}
+            onClick={() => setActiveTab(t.id)}>
+            <span className="bottom-nav-icon">{t.icon}</span>
+            <span className="bottom-nav-label">{t.label}</span>
+          </button>
+        ))}
+      </nav>
 
       <footer>💪 Consistência vence tudo. Você consegue!</footer>
     </div>
