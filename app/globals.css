@@ -2356,3 +2356,206 @@ footer {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK MODE
+   Applied via html.dark class (toggled by JS)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+html.dark {
+  --primary:        #60A5FA;
+  --dark:           #1F2937;
+  --card-bg:        #1F2937;
+  --border:         #374151;
+  --text-primary:   #F3F4F6;
+  --text-secondary: #9CA3AF;
+  --success:        #34D399;
+  --warning:        #FCD34D;
+  --error:          #F87171;
+  --bg:             #111827;
+}
+
+html.dark body                  { background: #111827; color: #F3F4F6; }
+html.dark header                { background: rgba(17,24,39,0.96); }
+html.dark footer                { background: rgba(17,24,39,0.96); }
+
+/* Cards */
+html.dark .card:hover           { box-shadow: 0 4px 16px rgba(0,0,0,0.5); border-color: #4B5563; }
+html.dark .macro-box            { background: #111827; }
+html.dark .week-status-card     { background: #1F2937; }
+html.dark .day-finalized-card   { background: rgba(52,211,153,0.08); }
+html.dark .day-complete-card    { background: linear-gradient(135deg,rgba(52,211,153,.12),rgba(96,165,250,.12)); }
+html.dark .stat-box             { background: rgba(96,165,250,.1); border-color: rgba(96,165,250,.2); }
+html.dark .feedback-box         { background: rgba(52,211,153,.08); }
+html.dark .weight-badge-card    { background: rgba(96,165,250,.08); border-color: rgba(96,165,250,.2); }
+html.dark .today-weight-card    { background: #1F2937; }
+
+/* Collapsible meals */
+html.dark .meal-collapse-card   { background: #1F2937; border-color: #374151; box-shadow: none; }
+html.dark .meal-collapse-header:hover { background: #111827; }
+html.dark .meal-collapse-body   { background: #1F2937; border-color: #374151; }
+html.dark .meal-item:hover      { background: #111827; }
+
+/* Inputs */
+html.dark input[type="number"],
+html.dark input[type="date"],
+html.dark textarea              { background: #111827; border-color: #374151; color: #F3F4F6; }
+html.dark input[type="number"]:focus,
+html.dark input[type="date"]:focus,
+html.dark textarea:focus        { background: #1F2937; }
+
+/* Buttons */
+html.dark .btn:hover            { background: #3B82F6; }
+html.dark .btn-cancel           { background: #374151 !important; color: #9CA3AF !important; border-color: #4B5563 !important; }
+html.dark .btn-cancel:hover     { background: #4B5563 !important; color: #F3F4F6 !important; }
+html.dark .btn-pdf              { background: #374151 !important; border-color: #4B5563 !important; color: #F3F4F6 !important; }
+html.dark .btn-pdf:hover        { background: #4B5563 !important; }
+html.dark .config-reset-btn     { background: #1F2937; border-color: #374151; }
+html.dark .config-reset-btn:hover { border-color: var(--primary); background: rgba(96,165,250,.08); }
+html.dark .alt-btn              { background: #1F2937; border-color: #374151; }
+html.dark .qty-btn              { background: #1F2937; border-color: #374151; }
+html.dark .filter-btn           { background: #1F2937; border-color: #374151; }
+html.dark .sub-tab-btn          { background: #1F2937; border-color: #374151; }
+html.dark .photo-upload-label   { background: #111827; }
+html.dark .import-mode-btn      { border-color: #374151; color: #9CA3AF; }
+
+/* Checkbox */
+html.dark .checkbox             { background: #374151; border-color: #4B5563; }
+html.dark .checkbox:hover       { background: rgba(96,165,250,.15); border-color: var(--primary); }
+
+/* Dropdown */
+html.dark .alt-dropdown         { background: #1F2937; border-color: #374151; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+html.dark .alt-option           { border-color: #374151; }
+html.dark .alt-option:hover     { background: #374151; }
+
+/* Modal */
+html.dark .modal-card           { background: #1F2937; border-color: #374151; }
+html.dark .modal-textarea       { background: #111827; border-color: #374151; }
+html.dark .modal-input          { background: #111827; border-color: #374151; }
+html.dark .modal-feedback       { background: #111827; border-color: #374151; }
+
+/* Login */
+html.dark .login-screen         { background: linear-gradient(135deg,#111827 0%,#1F2937 100%); }
+html.dark .login-card           { background: #1F2937; box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+html.dark .login-tabs           { background: #111827; }
+html.dark .login-input          { background: #111827; border-color: #374151; color: #F3F4F6; }
+html.dark .login-input:focus    { background: #0F172A; }
+html.dark .login-input::placeholder { color: #6B7280; }
+html.dark .login-error          { background: rgba(239,68,68,.15); color: #FCA5A5; border-color: rgba(239,68,68,.3); }
+html.dark .auth-loading         { background: #111827; }
+
+/* Tables & lists */
+html.dark .stats-table th       { background: #111827; }
+html.dark .stats-table td       { border-color: #374151; }
+html.dark .insight-row          { border-color: #374151; }
+html.dark .insight-item         { border-color: #374151; }
+html.dark .summary-row          { border-color: #374151; }
+html.dark .config-item-row      { border-color: #374151; }
+html.dark .weight-history-item  { background: #111827; }
+html.dark .wh-stat-box          { background: #111827; border-color: #374151; }
+
+/* Report */
+html.dark .report-view          { background: #1F2937; }
+html.dark .report-header        { background: #1F2937; border-color: #374151; }
+html.dark .report-section       { background: #111827; }
+html.dark .report-action-bar    { background: #1F2937; border-color: #374151; }
+html.dark .report-range-preview { background: rgba(96,165,250,.08); border-color: rgba(96,165,250,.2); }
+
+/* Calculadora */
+html.dark .calc-result-box      { border-color: #374151; }
+html.dark .calc-result-imc      { background: #111827; }
+html.dark .calc-result-row      { border-color: #374151; }
+html.dark .calc-option-card     { border-color: #374151; }
+html.dark .calc-option-card.active { background: rgba(96,165,250,.1); }
+html.dark .deficit-btn          { border-color: #374151; color: #9CA3AF; }
+html.dark .bio-section          { border-color: #374151; }
+html.dark .bio-content          { border-color: #374151; }
+html.dark .bio-toggle           { background: #111827; }
+html.dark .bio-toggle:hover     { background: #1F2937; }
+html.dark .bio-upload-zone      { border-color: #374151; }
+
+/* Dieta */
+html.dark .diet-gen-meal        { border-color: #374151; }
+html.dark .diet-gen-meal-header { background: #111827; }
+html.dark .diet-gen-summary     { background: #1F2937; border-color: #374151; }
+html.dark .diet-gen-item        { border-color: #374151; }
+html.dark .diet-sub-btn         { background: rgba(96,165,250,.1); border-color: #374151; }
+
+/* Import */
+html.dark .import-dropzone      { border-color: #374151; }
+html.dark .import-dropzone:hover { background: rgba(96,165,250,.06); }
+html.dark .import-stats-row     { background: #1F2937; border-color: #374151; }
+html.dark .import-preview-list  { border-color: #374151; }
+html.dark .import-meal-section  { border-color: #374151; }
+
+/* TACO */
+html.dark .taco-results         { border-color: #374151; }
+html.dark .taco-result-item:hover { background: rgba(96,165,250,.08); }
+html.dark .taco-calc-preview    { background: #111827; border-color: #374151; }
+
+/* Sub search */
+html.dark .sub-search-section input { background: #111827; border-color: #374151; }
+html.dark .sub-search-section input:focus { background: #1F2937; }
+html.dark .diet-sub-original    { background: #1F2937; border-color: #374151; }
+
+/* Sync */
+html.dark .sync-code-block      { background: #111827; }
+html.dark .sync-badge           { background: #1F2937; }
+
+/* Onboarding */
+html.dark .onboarding-banner    { background: rgba(96,165,250,.12); border-color: rgba(96,165,250,.3); }
+
+/* Theme toggle */
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.theme-toggle:hover { border-color: var(--primary); background: rgba(59,130,246,.08); }
+html.dark .theme-toggle:hover { background: rgba(96,165,250,.12); }
+
+/* Onboarding modal */
+.onboarding-banner {
+  background: rgba(59,130,246,.08);
+  border: 1px solid rgba(59,130,246,.25);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.onboarding-banner-text { flex: 1; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.onboarding-banner-text strong { color: var(--primary); }
+.onboarding-step-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  background: var(--primary);
+  color: white;
+  flex-shrink: 0;
+}
+.onboarding-done-banner {
+  background: rgba(16,185,129,.08);
+  border: 1px solid rgba(16,185,129,.25);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success);
+  animation: fadeIn 0.4s ease;
+}
+html.dark .onboarding-done-banner { background: rgba(52,211,153,.08); border-color: rgba(52,211,153,.25); }

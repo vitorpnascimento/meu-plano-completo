@@ -492,6 +492,13 @@ export default function Home() {
   const [openAlt,        setOpenAlt]        = useState<string|null>(null)
   const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
+  // ── Theme ────────────────────────────────────────────────────────────────────
+  const [isDark, setIsDark] = useState(true) // dark por padrão
+
+  // ── Onboarding ───────────────────────────────────────────────────────────────
+  // 0=off  1=modal boas-vindas  2=hint calc  3=hint dieta  4=done toast
+  const [onboardingStep, setOnboardingStep] = useState<0|1|2|3|4>(0)
+
   const [showFinalize,      setShowFinalize]      = useState(false)
   const [finObs,            setFinObs]            = useState('')
   const [finExtras,         setFinExtras]         = useState('')
@@ -652,6 +659,10 @@ export default function Home() {
       const raw = localStorage.getItem('dietAppData')
       if (raw) {
         try { applyData(JSON.parse(raw)) } catch {}
+      } else if (!localStorage.getItem('onboarding_done')) {
+        // Novo usuário sem Firebase → mostra onboarding
+        applyData({ meals: NEW_USER_MEALS, userGoals: NEW_USER_GOALS })
+        setOnboardingStep(1)
       }
       return
     }
@@ -691,9 +702,11 @@ export default function Home() {
             setSyncStatus(ok ? 'synced' : 'offline')
           )
         } else {
-          // Novo usuário: dados zerados
+          // Novo usuário: dados zerados → mostra onboarding
           applyData({ meals: NEW_USER_MEALS, userGoals: NEW_USER_GOALS })
           setSyncStatus('idle')
+          const done = authUser && localStorage.getItem(`onboarding_done_${authUser.uid}`)
+          if (!done) setOnboardingStep(1)
         }
         localStorage.setItem('dietUserId', authUser.uid)
       })
@@ -710,6 +723,29 @@ export default function Home() {
     document.addEventListener('click', fn)
     return () => document.removeEventListener('click', fn)
   }, [openAlt])
+
+  // ── Tema: inicializa do localStorage (dark por padrão) ──────────────────────
+  useEffect(() => {
+    const saved = localStorage.getItem('theme')
+    setIsDark(saved !== 'light')
+  }, [])
+
+  // ── Tema: aplica classe 'dark' no <html> ────────────────────────────────────
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+    localStorage.setItem('theme', isDark ? 'dark' : 'light')
+  }, [isDark])
+
+  // ── Onboarding: auto-dismiss do toast de conclusão ──────────────────────────
+  useEffect(() => {
+    if (onboardingStep !== 4) return
+    const t = setTimeout(() => setOnboardingStep(0), 4000)
+    return () => clearTimeout(t)
+  }, [onboardingStep])
 
   // ── Save ────────────────────────────────────────────────────────────────────
 
@@ -1171,6 +1207,8 @@ export default function Home() {
     setUserGoals(ng)
     save({ userGoals: ng })
     setActiveTab('gerar-dieta')
+    // Avança onboarding: calc → dieta
+    if (onboardingStep === 2) setOnboardingStep(3)
   }
 
   // ── Ações: Gerar Dieta ────────────────────────────────────────────────────────
@@ -1243,6 +1281,13 @@ export default function Home() {
     save({ meals: nm, userGoals: ng })
     setGeneratedDiet(null)
     setActiveTab('hoje')
+    // Conclui onboarding
+    if (onboardingStep === 3) {
+      setOnboardingStep(4)
+      // Marca como concluído
+      if (authUser) localStorage.setItem(`onboarding_done_${authUser.uid}`, '1')
+      else          localStorage.setItem('onboarding_done', '1')
+    }
   }
 
   // ── Cálculos hoje ───────────────────────────────────────────────────────────
@@ -2100,19 +2145,55 @@ export default function Home() {
         </div>
       )}
 
+      {/* ══ ONBOARDING: Modal de boas-vindas (step 1) ══ */}
+      {onboardingStep === 1 && (
+        <div className="modal-overlay" style={{ zIndex: 300 }}>
+          <div className="modal-card" style={{ textAlign: 'center', maxWidth: 360 }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>👋</div>
+            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
+              Bem-vindo ao Meu Plano!
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.7 }}>
+              Vamos configurar sua dieta em <strong style={{ color: 'var(--primary)' }}>3 passos</strong>:<br />
+              <span style={{ display: 'inline-block', marginTop: 8 }}>
+                🧮 Calcule sua meta calórica<br />
+                🍽️ Gere sua dieta personalizada<br />
+                📋 Comece a acompanhar!
+              </span>
+            </div>
+            <button className="btn" onClick={() => { setOnboardingStep(2); setActiveTab('calculadora') }}>
+              Começar configuração →
+            </button>
+            <button className="btn btn-cancel" style={{ marginTop: 10, width: '100%' }}
+              onClick={() => { setOnboardingStep(0); localStorage.setItem('onboarding_done', '1') }}>
+              Pular e configurar depois
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <header>
         <div className="header-content">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <div>
               <h1>💪 Meu Plano</h1>
-              <div className="subtitle">Acompanhamento de Dieta & Treino</div>
+              <div className="subtitle">Dieta & Treino</div>
             </div>
-            {firebaseConfigured && syncStatus !== 'unconfigured' && (
-              <div className={`sync-badge sync-badge--${syncStatus}`}>
-                {SYNC_ICON[syncStatus]}
-              </div>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {firebaseConfigured && syncStatus !== 'unconfigured' && (
+                <div className={`sync-badge sync-badge--${syncStatus}`}>
+                  {SYNC_ICON[syncStatus]}
+                </div>
+              )}
+              <button
+                className="theme-toggle"
+                title={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
+                onClick={() => setIsDark(d => !d)}
+              >
+                {isDark ? '☀️' : '🌙'}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -2140,6 +2221,13 @@ export default function Home() {
 
         {/* ══════════════════════════════════════════════════════ HOJE */}
         <div className={`tab-content ${activeTab === 'hoje' ? 'active' : ''}`}>
+
+          {/* Onboarding: toast de conclusão */}
+          {onboardingStep === 4 && (
+            <div className="onboarding-done-banner">
+              🎉 Tudo pronto! Seu cardápio está configurado. Comece a marcar as refeições!
+            </div>
+          )}
 
           {/* Status do Dia — compacto, clicável */}
           {(() => {
@@ -2344,6 +2432,15 @@ export default function Home() {
 
         {/* ══════════════════════════════════════════════════════ CALCULADORA */}
         <div className={`tab-content ${activeTab === 'calculadora' ? 'active' : ''}`}>
+          {onboardingStep === 2 && (
+            <div className="onboarding-banner">
+              <span className="onboarding-step-badge">Passo 1 / 3</span>
+              <div className="onboarding-banner-text">
+                <strong>Calcule sua meta calórica.</strong> Preencha seus dados e clique em <strong>"Calcular"</strong>.
+                Depois use o botão <strong>"Usar →"</strong> para continuar.
+              </div>
+            </div>
+          )}
           <div className="card">
             <div className="card-title">🧮 Calculadora de Nutrição</div>
 
@@ -2500,6 +2597,15 @@ export default function Home() {
 
         {/* ══════════════════════════════════════════════════════ GERAR DIETA */}
         <div className={`tab-content ${activeTab === 'gerar-dieta' ? 'active' : ''}`}>
+          {onboardingStep === 3 && (
+            <div className="onboarding-banner">
+              <span className="onboarding-step-badge">Passo 2 / 3</span>
+              <div className="onboarding-banner-text">
+                <strong>Quase lá!</strong> Clique em <strong>"Gerar Dieta Automaticamente"</strong>,
+                revise os alimentos e clique <strong>"Usar e Salvar no Cardápio"</strong>.
+              </div>
+            </div>
+          )}
           <div className="card">
             <div className="card-title">🍽️ Gerar Dieta Automática</div>
 
