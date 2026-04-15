@@ -499,6 +499,12 @@ export default function Home() {
   // 0=off  1=modal boas-vindas  2=hint calc  3=hint dieta  4=done toast
   const [onboardingStep, setOnboardingStep] = useState<0|1|2|3|4>(0)
 
+  // ── Setup gate ───────────────────────────────────────────────────────────────
+  // Sugestão de regerar dieta quando meta calórica muda
+  const [suggestRegen, setSuggestRegen] = useState(false)
+  // Seções expansíveis do Config
+  const [configSections, setConfigSections] = useState<Record<string, boolean>>({ metas: true })
+
   const [showFinalize,      setShowFinalize]      = useState(false)
   const [finObs,            setFinObs]            = useState('')
   const [finExtras,         setFinExtras]         = useState('')
@@ -873,6 +879,10 @@ export default function Home() {
     const num = parseInt(val); if (isNaN(num) || num <= 0) return
     const ng = { ...userGoals, [key]: num }
     setUserGoals(ng); save({ userGoals: ng })
+    // Se a meta calórica mudou e já existe um cardápio, sugere regenerar
+    if (key === 'cals' && num !== userGoals.cals && meals.some(m => (m.items ?? []).length > 0)) {
+      setSuggestRegen(true)
+    }
   }
 
   const resetGoals = () => { setUserGoals(DEFAULT_GOALS); save({ userGoals: DEFAULT_GOALS }) }
@@ -1383,6 +1393,15 @@ export default function Home() {
   const allItemOptions = meals.flatMap(m => (m.items ?? []).map(it => ({ id: it.id, label: `${m.title} → ${it.name}` })))
 
   const firebaseConfigured = isFirebaseConfigured()
+
+  // ── Setup gate ───────────────────────────────────────────────────────────────
+  // Verdadeiro quando o usuário tem pelo menos um item em alguma refeição
+  const setupComplete = meals.some(m => (m.items ?? []).length > 0)
+  // Verdadeiro quando o usuário está no caminho automático de setup (calc → dieta)
+  const inAutoSetup   = (onboardingStep === 2 || onboardingStep === 3) && !setupComplete
+
+  const toggleConfigSection = (key: string) =>
+    setConfigSections(prev => ({ ...prev, [key]: !prev[key] }))
 
   // ── Telas de loading / login ─────────────────────────────────────────────────
 
@@ -2161,12 +2180,19 @@ export default function Home() {
                 📋 Comece a acompanhar!
               </span>
             </div>
-            <button className="btn" onClick={() => { setOnboardingStep(2); setActiveTab('calculadora') }}>
-              Começar configuração →
+            <button className="btn" style={{ width: '100%' }}
+              onClick={() => { setOnboardingStep(2); setActiveTab('calculadora') }}>
+              🧮 Calcular meta e gerar dieta
             </button>
             <button className="btn btn-cancel" style={{ marginTop: 10, width: '100%' }}
-              onClick={() => { setOnboardingStep(0); localStorage.setItem('onboarding_done', '1') }}>
-              Pular e configurar depois
+              onClick={() => {
+                setOnboardingStep(0)
+                if (authUser) localStorage.setItem(`onboarding_done_${authUser.uid}`, '1')
+                else          localStorage.setItem('onboarding_done', '1')
+                setActiveTab('config')
+                setConfigSections(prev => ({ ...prev, cardapio: true }))
+              }}>
+              ✍️ Montar minha própria dieta
             </button>
           </div>
         </div>
@@ -2198,6 +2224,16 @@ export default function Home() {
         </div>
       </header>
 
+      {/* Banner de progresso de setup (caminho automático, steps 2-3) */}
+      {inAutoSetup && (
+        <div className="setup-progress-banner">
+          <span>🔧 Configure seu plano primeiro —</span>
+          <span className="setup-progress-steps">
+            Passo {onboardingStep === 2 ? '1' : '2'}/2: {onboardingStep === 2 ? 'Calculadora' : 'Gerar Dieta'}
+          </span>
+        </div>
+      )}
+
       <div className="container">
         <div className="tabs">
           {[
@@ -2206,8 +2242,12 @@ export default function Home() {
             { id:'estatísticas', label:'📊 Stats'    },
             { id:'config',       label:'⚙️ Config'  },
           ].map(t => (
-            <button key={t.id} className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(t.id)}>{t.label}</button>
+            <button key={t.id}
+              className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
+              disabled={inAutoSetup}
+              onClick={() => setActiveTab(t.id)}>
+              {t.label}
+            </button>
           ))}
           <div className="tabs-divider" />
           {[
@@ -2952,118 +2992,164 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ CONFIG */}
         <div className={`tab-content ${activeTab === 'config' ? 'active' : ''}`}>
 
-          {/* ── Conta ── */}
+          {/* ── Seção: Conta ── */}
           {firebaseConfigured && authUser && (
-            <div className="card">
-              <div className="card-title">👤 Minha Conta</div>
-              <div className="account-row">
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser.email}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                    {syncStatus === 'synced'  && '☁️ Sincronizado'}
-                    {syncStatus === 'syncing' && '⟳ Sincronizando...'}
-                    {syncStatus === 'offline' && '📵 Offline — dados salvos localmente'}
-                    {syncStatus === 'idle'    && '☁️ Conectado'}
+            <div className="config-section">
+              <div className="config-section-header" onClick={() => toggleConfigSection('conta')}>
+                <span>👤 Minha Conta</span>
+                <span className={`config-section-arrow ${configSections.conta ? 'open' : ''}`}>▼</span>
+              </div>
+              {configSections.conta && (
+                <div className="config-section-body">
+                  <div className="account-row" style={{ marginTop: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser.email}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        {syncStatus === 'synced'  && '☁️ Sincronizado'}
+                        {syncStatus === 'syncing' && '⟳ Sincronizando...'}
+                        {syncStatus === 'offline' && '📵 Offline — dados salvos localmente'}
+                        {syncStatus === 'idle'    && '☁️ Conectado'}
+                      </div>
+                    </div>
+                    <button className="btn btn-small warning" style={{ width: 'auto' }} onClick={handleLogout}>
+                      Sair
+                    </button>
                   </div>
                 </div>
-                <button className="btn btn-small warning" style={{ width: 'auto' }} onClick={handleLogout}>
-                  Sair
-                </button>
-              </div>
+              )}
             </div>
           )}
 
-          {/* ── Minhas Metas ── */}
-          <div className="card">
-            <div className="card-title">Minhas Metas</div>
-            <div className="config-goals">
-              {([{ key:'cals', label:'Calorias', unit:'kcal' },{ key:'p', label:'Proteína', unit:'g' },{ key:'c', label:'Carboidrato', unit:'g' },{ key:'f', label:'Gordura', unit:'g' }] as { key: keyof typeof DEFAULT_GOALS; label:string; unit:string }[]).map(({ key, label, unit }) => (
-                <div key={key} className="config-goal-row">
-                  <label className="config-goal-label">{label}</label>
-                  <div className="config-goal-input-wrap">
-                    <input type="number" className="config-goal-input" value={userGoals[key]} onChange={e => updateGoal(key, e.target.value)} />
-                    <span className="config-goal-unit">{unit}</span>
-                  </div>
-                </div>
-              ))}
+          {/* ── Seção: Minhas Metas ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('metas')}>
+              <span>🎯 Minhas Metas</span>
+              <span className={`config-section-arrow ${configSections.metas ? 'open' : ''}`}>▼</span>
             </div>
-            <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={resetGoals}>
-              ↩ Reset Padrão ({DEFAULT_GOALS.cals} kcal · P{DEFAULT_GOALS.p}g · C{DEFAULT_GOALS.c}g · G{DEFAULT_GOALS.f}g)
-            </button>
-          </div>
-
-          {/* ── Gerenciar Substituidores ── */}
-          <div className="card">
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div className="card-title" style={{ marginBottom:0 }}>Gerenciar Substituidores</div>
-              <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openSubModal()}>+ Adicionar</button>
-            </div>
-            {meals.map(meal => (meal.items ?? []).map(item => {
-              const alts = alternatives[item.id] || []
-              return (
-                <div key={item.id} style={{ marginBottom:16 }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-                    <div style={{ fontSize:13, fontWeight:600 }}>{meal.title} → {item.name}</div>
-                    <button className="config-reset-btn" onClick={() => openSubModal(item.id)}>+ sub</button>
+            {configSections.metas && (
+              <div className="config-section-body">
+                {/* Sugestão de regerar dieta quando meta calórica muda */}
+                {suggestRegen && (
+                  <div className="regen-suggestion">
+                    <div>🍽️ Sua meta calórica mudou para <strong>{userGoals.cals} kcal/dia</strong>. Deseja gerar um novo cardápio automaticamente?</div>
+                    <div className="regen-actions">
+                      <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => {
+                        setDietTarget(String(userGoals.cals))
+                        setGeneratedDiet(generateDiet(userGoals.cals, dietBudget))
+                        setActiveTab('gerar-dieta')
+                        setSuggestRegen(false)
+                      }}>
+                        ✓ Gerar novo cardápio
+                      </button>
+                      <button className="btn btn-small btn-cancel" style={{ width: 'auto' }}
+                        onClick={() => setSuggestRegen(false)}>
+                        ✗ Manter atual
+                      </button>
+                    </div>
                   </div>
-                  {alts.length === 0
-                    ? <div style={{ fontSize:12, color:'var(--text-secondary)', paddingLeft:8 }}>Nenhum substituidor</div>
-                    : alts.map(alt => (
-                        <div key={alt.id} className="config-item-row">
-                          <div>
-                            <div style={{ fontSize:13 }}>{alt.name}</div>
-                            <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(alt)}</div>
-                          </div>
-                          <button className="config-reset-btn" onClick={() => deleteAlt(item.id, alt.id)}>✕</button>
-                        </div>
-                      ))
-                  }
+                )}
+                <div className="config-goals" style={{ marginTop: 8 }}>
+                  {([{ key:'cals', label:'Calorias', unit:'kcal' },{ key:'p', label:'Proteína', unit:'g' },{ key:'c', label:'Carboidrato', unit:'g' },{ key:'f', label:'Gordura', unit:'g' }] as { key: keyof typeof DEFAULT_GOALS; label:string; unit:string }[]).map(({ key, label, unit }) => (
+                    <div key={key} className="config-goal-row">
+                      <label className="config-goal-label">{label}</label>
+                      <div className="config-goal-input-wrap">
+                        <input type="number" className="config-goal-input" value={userGoals[key]} onChange={e => updateGoal(key, e.target.value)} />
+                        <span className="config-goal-unit">{unit}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )
-            }))}
-          </div>
-
-          {/* ── Meu Cardápio ── */}
-          <div className="card">
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <div className="card-title" style={{ marginBottom:0 }}>Meu Cardápio</div>
-              <div style={{ display:'flex', gap:6 }}>
-                <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}>🥗 Buscar TACO</button>
-                <button className="btn btn-small" style={{ width:'auto', background:'var(--text-secondary)' }}
-                  onClick={() => { setImportStep('upload'); setImportFile(''); setImportPreview(null); setShowImport(true) }}>
-                  📄 Importar Dieta
+                <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={resetGoals}>
+                  ↩ Reset Padrão ({DEFAULT_GOALS.cals} kcal · P{DEFAULT_GOALS.p}g · C{DEFAULT_GOALS.c}g · G{DEFAULT_GOALS.f}g)
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* ── Seção: Meu Cardápio ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('cardapio')}>
+              <span>🍽️ Meu Cardápio</span>
+              <span className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`}>▼</span>
             </div>
-            {meals.map((meal, mealIdx) => (
-              <div key={meal.id} style={{ marginBottom:20 }}>
-                <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)', marginBottom:8 }}>
-                  {meal.title} · ~{(meal.items ?? []).reduce((s,it)=>s+it.kcal,0)} kcal
+            {configSections.cardapio && (
+              <div className="config-section-body">
+                <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8 }}>
+                  <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}>🥗 Buscar TACO</button>
+                  <button className="btn btn-small" style={{ width:'auto', background:'var(--text-secondary)' }}
+                    onClick={() => { setImportStep('upload'); setImportFile(''); setImportPreview(null); setShowImport(true) }}>
+                    📄 Importar Dieta
+                  </button>
                 </div>
-                {(meal.items ?? []).map(item => (
-                  <div key={item.id} className="config-item-row">
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
-                      <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
+                {meals.map((meal, mealIdx) => (
+                  <div key={meal.id} style={{ marginBottom:20 }}>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)', marginBottom:8 }}>
+                      {meal.title} · ~{(meal.items ?? []).reduce((s,it)=>s+it.kcal,0)} kcal
                     </div>
-                    <div style={{ display:'flex', gap:6 }}>
-                      <button className="config-reset-btn" onClick={() => openItemModal('edit', mealIdx, item)}>Editar</button>
-                      <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={() => deleteMealItem(mealIdx, item.id)}>✕</button>
+                    {(meal.items ?? []).map(item => (
+                      <div key={item.id} className="config-item-row">
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
+                          <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
+                        </div>
+                        <div style={{ display:'flex', gap:6 }}>
+                          <button className="config-reset-btn" onClick={() => openItemModal('edit', mealIdx, item)}>Editar</button>
+                          <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={() => deleteMealItem(mealIdx, item.id)}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:6, marginTop:8 }}>
+                      <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
+                        onClick={() => openItemModal('add', mealIdx)}>
+                        + Adicionar manual
+                      </button>
+                      <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
+                        onClick={() => openTACO(mealIdx)}>
+                        🥗 Buscar TACO
+                      </button>
                     </div>
                   </div>
                 ))}
-                <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                  <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                    onClick={() => openItemModal('add', mealIdx)}>
-                    + Adicionar manual
-                  </button>
-                  <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                    onClick={() => openTACO(mealIdx)}>
-                    🥗 Buscar TACO
-                  </button>
-                </div>
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* ── Seção: Gerenciar Substituidores ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('subs')}>
+              <span>🔄 Gerenciar Substituidores</span>
+              <span className={`config-section-arrow ${configSections.subs ? 'open' : ''}`}>▼</span>
+            </div>
+            {configSections.subs && (
+              <div className="config-section-body">
+                <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12, marginTop:8 }}>
+                  <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openSubModal()}>+ Adicionar</button>
+                </div>
+                {meals.map(meal => (meal.items ?? []).map(item => {
+                  const alts = alternatives[item.id] || []
+                  return (
+                    <div key={item.id} style={{ marginBottom:16 }}>
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+                        <div style={{ fontSize:13, fontWeight:600 }}>{meal.title} → {item.name}</div>
+                        <button className="config-reset-btn" onClick={() => openSubModal(item.id)}>+ sub</button>
+                      </div>
+                      {alts.length === 0
+                        ? <div style={{ fontSize:12, color:'var(--text-secondary)', paddingLeft:8 }}>Nenhum substituidor</div>
+                        : alts.map(alt => (
+                            <div key={alt.id} className="config-item-row">
+                              <div>
+                                <div style={{ fontSize:13 }}>{alt.name}</div>
+                                <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(alt)}</div>
+                              </div>
+                              <button className="config-reset-btn" onClick={() => deleteAlt(item.id, alt.id)}>✕</button>
+                            </div>
+                          ))
+                      }
+                    </div>
+                  )
+                }))}
+              </div>
+            )}
           </div>
 
         </div>
