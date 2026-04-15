@@ -487,9 +487,10 @@ export default function Home() {
   const [syncStatus,   setSyncStatus]   = useState<SyncStatus>('unconfigured')
 
   // ── UI State ────────────────────────────────────────────────────────────────
-  const [activeTab,    setActiveTab]    = useState('hoje')
-  const [statsSubTab,  setStatsSubTab]  = useState<'diario'|'semanal'|'mensal'>('diario')
-  const [openAlt,      setOpenAlt]      = useState<string|null>(null)
+  const [activeTab,      setActiveTab]      = useState('hoje')
+  const [statsSubTab,    setStatsSubTab]    = useState<'diario'|'semanal'|'mensal'>('diario')
+  const [openAlt,        setOpenAlt]        = useState<string|null>(null)
+  const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
   const [showFinalize,      setShowFinalize]      = useState(false)
   const [finObs,            setFinObs]            = useState('')
@@ -2120,13 +2121,19 @@ export default function Home() {
         <div className="tabs">
           {[
             { id:'hoje',         label:'📋 Cardápio' },
-            { id:'peso',         label:'Peso'         },
-            { id:'calculadora',  label:'🧮 Calc'      },
-            { id:'gerar-dieta',  label:'🍽️ Dieta'   },
-            { id:'estatísticas', label:'📊 Stats'     },
-            { id:'config',       label:'⚙️ Config'   },
+            { id:'peso',         label:'⚖️ Peso'    },
+            { id:'estatísticas', label:'📊 Stats'    },
+            { id:'config',       label:'⚙️ Config'  },
           ].map(t => (
             <button key={t.id} className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.id)}>{t.label}</button>
+          ))}
+          <div className="tabs-divider" />
+          {[
+            { id:'calculadora', label:'Calc' },
+            { id:'gerar-dieta', label:'Dieta' },
+          ].map(t => (
+            <button key={t.id} className={`tab-btn tab-btn-secondary ${activeTab === t.id ? 'active' : ''}`}
               onClick={() => setActiveTab(t.id)}>{t.label}</button>
           ))}
         </div>
@@ -2134,73 +2141,36 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ HOJE */}
         <div className={`tab-content ${activeTab === 'hoje' ? 'active' : ''}`}>
 
+          {/* Status do Dia — compacto, clicável */}
           {(() => {
-            // Usa liveDayTotal (mesma fonte que todayFeedback) para garantir mensagens consistentes
             const diff     = liveDayTotal - CAL_META
             const onTarget = Math.abs(diff) <= 50
-            const color    = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : '#e53935'
+            const color    = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : 'var(--error)'
             const emoji    = onTarget ? '🟢' : diff < 0 ? '🟡' : '🔴'
             const text     = onTarget
-              ? 'No alvo! 🎯 Você atingiu sua meta!'
+              ? 'No alvo! Você atingiu sua meta!'
               : diff < 0
-                ? `Você comeu pouco! Margem: +${Math.abs(diff)} kcal`
-                : `Passou da meta em +${diff} kcal`
+                ? `Pouco! Margem: +${Math.abs(diff)} kcal`
+                : `Passou em +${diff} kcal`
             const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
             return (
               <div className="week-status-card" style={{ borderColor: color }}
                 onClick={() => { setActiveTab('estatísticas'); setStatsSubTab('diario') }}>
                 <div className="week-status-left">
-                  <div className="week-status-title">📊 Status do Dia</div>
+                  <div className="week-status-title">Status do Dia</div>
                   <div className="week-status-text" style={{ color }}>
                     {emoji} {text}
                   </div>
                   <div className="week-status-sub">
-                    {mealsCompleted}/{meals.length} refeições concluídas · {dateStr}
+                    {mealsCompleted}/{meals.length} refeições · {dateStr}
                   </div>
                 </div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>→</div>
               </div>
             )
           })()}
 
-          {todayFinished ? (
-            <div className="day-finalized-card">
-              <div style={{ fontSize: 28 }}>✅</div>
-              <div>
-                <div className="day-finalized-title">Dia Finalizado às {todayStat.timestamp}</div>
-                <div className="day-finalized-feedback" style={{ color: todayFeedback.color }}>{todayFeedback.msg}</div>
-                {todayStat.observacoes && <div className="day-finalized-obs">"{todayStat.observacoes}"</div>}
-              </div>
-            </div>
-          ) : (
-            <button className="btn btn-finalizar" onClick={() => setShowFinalize(true)}>🏁 Finalizar Dia</button>
-          )}
-
-          <div className="stats">
-            <div className="stat-box"><div className="stat-value">{mealsCompleted}/{meals.length}</div><div className="stat-label">Refeições</div></div>
-            <div className="stat-box"><div className="stat-value">{totalCals}</div><div className="stat-label">kcal</div></div>
-            <div className="stat-box"><div className="stat-value">{Math.min(100, Math.round((totalCals / CAL_META) * 100))}%</div><div className="stat-label">Meta</div></div>
-          </div>
-
-          <div className="card">
-            <div className="card-title">Macronutrientes (Tempo Real)</div>
-            <div className="macros-grid">
-              {[
-                { label:'Proteína',    val: totalP, meta: userGoals.p },
-                { label:'Carboidrato', val: totalC, meta: userGoals.c },
-                { label:'Gordura',     val: totalF, meta: userGoals.f },
-              ].map(({ label, val, meta }) => (
-                <div key={label} className="macro-box">
-                  <div className="macro-label">{label}</div>
-                  <div className="macro-value">{val}g</div>
-                  <div className="macro-goal">Meta: {meta}g</div>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${Math.min(100, (val/meta)*100)}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
+          {/* Refeições colapsáveis */}
           {meals.length === 0 || meals.every(m => (m.items ?? []).length === 0) ? (
             <div className="card" style={{ textAlign: 'center', padding: '32px 16px' }}>
               <div style={{ fontSize: 32, marginBottom: 12 }}>🍽️</div>
@@ -2213,62 +2183,115 @@ export default function Home() {
                 Ir para Configurações
               </button>
             </div>
-          ) : meals.map(meal => (
-            <div key={meal.id} className="card">
-              <div className="card-title">
-                {meal.title} · ~{(meal.items ?? []).reduce((s, it) => s + it.kcal, 0)} kcal
-              </div>
-              {(meal.items ?? []).length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic' }}>
-                  Nenhum alimento — adicione em Config
-                </div>
-              ) : (meal.items ?? []).map(item => {
-                const subActive  = activeSubs[item.id]
-                const display    = subActive || item
-                const alts       = alternatives[item.id] || []
-                const isOpen     = openAlt === item.id
-                // Detect unit qty from the *displayed* name (sub or base item)
-                const qtyMatch   = /\((\d{1,2})\s+[^\d)]+\)/i.exec(display.name)
-                const displayQty = qtyMatch ? parseInt(qtyMatch[1], 10) : undefined
-                return (
-                  <div key={item.id} className="meal-item-wrap">
-                    <div className="meal-item" onClick={() => toggleItem(item.id)}>
-                      <div className={`checkbox ${todayChecked[item.id] ? 'checked' : ''}`}>
-                        {todayChecked[item.id] ? '✓' : ''}
-                      </div>
-                      <div className="meal-content">
-                        <div className="meal-name">
-                          {display.name}
-                          {subActive && <span className="sub-badge">sub</span>}
-                        </div>
-                        <div className="meal-desc">{macroDesc(display)}</div>
-                      </div>
-                    </div>
-                    <div className="alt-wrap" onClick={e => e.stopPropagation()}>
-                      <button className="alt-btn" title="Substituir alimento"
-                        onClick={() => setTodaySubItem(item)}>🔄</button>
-                      {displayQty !== undefined && (
-                        <>
-                          <button
-                            className="qty-btn"
-                            title="Diminuir quantidade"
-                            disabled={displayQty <= 1}
-                            onClick={() => adjustQuantity(meal.id, item.id, 'decrease', displayQty)}
-                          >➖</button>
-                          <button
-                            className="qty-btn"
-                            title="Aumentar quantidade"
-                            disabled={displayQty >= 99}
-                            onClick={() => adjustQuantity(meal.id, item.id, 'increase', displayQty)}
-                          >➕</button>
-                        </>
-                      )}
-                    </div>
+          ) : meals.map(meal => {
+            const items       = meal.items ?? []
+            const isExpanded  = !!expandedMeals[meal.id]
+            const checkedCount = items.filter(it => todayChecked[it.id]).length
+            const mealStatus  = items.length === 0 ? 'empty' : checkedCount === 0 ? 'empty' : checkedCount < items.length ? 'partial' : 'complete'
+            const mealKcal    = items.reduce((s, it) => s + (activeSubs[it.id]?.kcal ?? it.kcal) * (todayChecked[it.id] ? 1 : 0), 0)
+            const mealKcalTotal = items.reduce((s, it) => s + (activeSubs[it.id]?.kcal ?? it.kcal), 0)
+            return (
+              <div key={meal.id} className="meal-collapse-card">
+                <div className="meal-collapse-header"
+                  onClick={() => setExpandedMeals(prev => ({ ...prev, [meal.id]: !prev[meal.id] }))}>
+                  {/* Status dots — one per item: green=checked, gray=unchecked */}
+                  <div className="meal-status-dots">
+                    {items.length === 0
+                      ? <div className="meal-dot meal-dot--empty" />
+                      : items.slice(0, 5).map(it => (
+                          <div key={it.id} className={`meal-dot meal-dot--${todayChecked[it.id] ? 'complete' : 'empty'}`} />
+                        ))
+                    }
                   </div>
-                )
-              })}
+                  <div className="meal-collapse-title">{meal.title}</div>
+                  <div className="meal-collapse-kcal">
+                    {mealKcal > 0 ? `${Math.round(mealKcal)}` : `~${Math.round(mealKcalTotal)}`} kcal
+                  </div>
+                  <div className={`meal-collapse-arrow ${isExpanded ? 'meal-collapse-arrow--open' : ''}`}>▼</div>
+                </div>
+                {isExpanded && (
+                  <div className="meal-collapse-body">
+                    {items.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', fontStyle: 'italic', padding: '4px 0' }}>
+                        Nenhum alimento — adicione em Config
+                      </div>
+                    ) : items.map(item => {
+                      const subActive  = activeSubs[item.id]
+                      const display    = subActive || item
+                      const qtyMatch   = /\((\d{1,2})\s+[^\d)]+\)/i.exec(display.name)
+                      const displayQty = qtyMatch ? parseInt(qtyMatch[1], 10) : undefined
+                      return (
+                        <div key={item.id} className="meal-item-wrap">
+                          <div className="meal-item" onClick={() => toggleItem(item.id)}>
+                            <div className={`checkbox ${todayChecked[item.id] ? 'checked' : ''}`}>
+                              {todayChecked[item.id] ? '✓' : ''}
+                            </div>
+                            <div className="meal-content">
+                              <div className="meal-name">
+                                {display.name}
+                                {subActive && <span className="sub-badge">sub</span>}
+                              </div>
+                              <div className="meal-desc">{macroDesc(display)}</div>
+                            </div>
+                          </div>
+                          <div className="alt-wrap" onClick={e => e.stopPropagation()}>
+                            <button className="alt-btn" title="Substituir alimento"
+                              onClick={() => setTodaySubItem(item)}>🔄</button>
+                            {displayQty !== undefined && (
+                              <>
+                                <button className="qty-btn" title="Diminuir quantidade"
+                                  disabled={displayQty <= 1}
+                                  onClick={() => adjustQuantity(meal.id, item.id, 'decrease', displayQty)}>➖</button>
+                                <button className="qty-btn" title="Aumentar quantidade"
+                                  disabled={displayQty >= 99}
+                                  onClick={() => adjustQuantity(meal.id, item.id, 'increase', displayQty)}>➕</button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* Macros */}
+          <div className="cardapio-macros">
+            <div className="cardapio-macros-title">Macros do Dia</div>
+            <div className="macros-grid">
+              {[
+                { label:'Proteína',    val: totalP, meta: userGoals.p, cls: 'macro-box--protein' },
+                { label:'Carboidrato', val: totalC, meta: userGoals.c, cls: 'macro-box--carb'    },
+                { label:'Gordura',     val: totalF, meta: userGoals.f, cls: 'macro-box--fat'     },
+              ].map(({ label, val, meta, cls }) => (
+                <div key={label} className={`macro-box ${cls}`}>
+                  <div className="macro-label">{label}</div>
+                  <div className="macro-value">{val}g</div>
+                  <div className="macro-goal">/{meta}g</div>
+                  <div className="progress-bar">
+                    <div className="progress-fill" style={{ width: `${Math.min(100, (val/meta)*100)}%` }} />
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+
+          {/* Finalizar Dia */}
+          {todayFinished ? (
+            <div className="day-finalized-card">
+              <div style={{ fontSize: 26 }}>✅</div>
+              <div>
+                <div className="day-finalized-title">Dia Finalizado às {todayStat.timestamp}</div>
+                <div className="day-finalized-feedback" style={{ color: todayFeedback.color }}>{todayFeedback.msg}</div>
+                {todayStat.observacoes && <div className="day-finalized-obs">"{todayStat.observacoes}"</div>}
+              </div>
+            </div>
+          ) : (
+            <button className="btn btn-finalizar" onClick={() => setShowFinalize(true)}>🏁 Finalizar Dia</button>
+          )}
+
         </div>
 
         {/* ══════════════════════════════════════════════════════ PESO */}
@@ -2631,6 +2654,10 @@ export default function Home() {
           )}
 
           <div className="report-btn-row">
+            <button className="btn btn-small btn-pdf" style={{ width:'auto' }}
+              onClick={() => window.print()}>
+              📥 PDF
+            </button>
             <button className="btn btn-small btn-report" style={{ width:'auto' }}
               onClick={() => { setShowReport(true); setReportStep('select'); setReportResult(null) }}>
               📄 Gerar Relatório
@@ -2836,19 +2863,6 @@ export default function Home() {
                 <button className="btn btn-small warning" style={{ width: 'auto' }} onClick={handleLogout}>
                   Sair
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Firebase Rules (info) ── */}
-          {firebaseConfigured && authUser && (
-            <div className="card">
-              <div className="card-title">🔒 Segurança Firebase</div>
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>
-                Configure as regras abaixo no Firebase Console → Realtime Database → Rules para garantir que cada usuário só acesse seus próprios dados:
-              </div>
-              <div className="sync-code-block">
-                {`{\n  "rules": {\n    "users": {\n      "$uid": {\n        ".read":  "auth != null && auth.uid == $uid",\n        ".write": "auth != null && auth.uid == $uid"\n      }\n    }\n  }\n}`}
               </div>
             </div>
           )}
