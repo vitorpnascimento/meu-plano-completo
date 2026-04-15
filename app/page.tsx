@@ -1136,18 +1136,27 @@ export default function Home() {
     setDietPasteStep('processing')
     setDietPasteError('')
     try {
-      const res = await fetch('/api/parse-diet', {
+      const res  = await fetch('/api/parse-diet', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ text: dietPasteText }),
       })
-      if (!res.ok) throw new Error('error')
-      const data: AIParsedDiet = await res.json()
-      if (!data.meals) throw new Error('invalid')
-      setDietPasteResult(data)
+      const data = await res.json()
+
+      // Server always returns 200 — check success flag and meals presence
+      if (!data.meals || Object.keys(data.meals).length === 0) {
+        // Server parsed OK but found nothing — show friendly message
+        console.warn('[client] parse-diet returned empty meals, debugError:', data.debugError)
+        setDietPasteError('A IA não identificou alimentos no texto. Tente um formato mais simples — ex: "Café: 2 ovos, 1 pão. Almoço: 150g frango, arroz, feijão."')
+        setDietPasteStep('input')
+        return
+      }
+
+      setDietPasteResult(data as AIParsedDiet)
       setDietPasteStep('preview')
-    } catch {
-      setDietPasteError('A IA não conseguiu interpretar esse formato. Tente simplificar o texto — ex: "Café: 2 ovos, 1 pão. Almoço: 150g frango, arroz, feijão."')
+    } catch (err) {
+      console.error('[client] parse-diet fetch failed:', err)
+      setDietPasteError('Erro de conexão. Verifique sua internet e tente novamente.')
       setDietPasteStep('input')
     }
   }

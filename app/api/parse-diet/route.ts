@@ -11,6 +11,17 @@ function sanitize(text: string): string {
     .trim()
 }
 
+/** Always-valid empty response — client shows "nenhum alimento identificado" */
+function emptyResult(debugError: string) {
+  console.error('[parse-diet] fallback:', debugError)
+  return NextResponse.json({
+    meals:       {},
+    totalMacros: { kcal: 0, p: 0, c: 0, f: 0 },
+    success:     false,
+    debugError,
+  })
+}
+
 const PROMPT = (text: string) => `Você é um analisador de dietas. Seu trabalho é ler QUALQUER texto de dieta e extrair os alimentos, mesmo que o texto esteja desorganizado, incompleto ou com erros.
 
 REGRAS ABSOLUTAS:
@@ -54,8 +65,11 @@ Refeições válidas: "Café da Manhã", "Lanche da Manhã", "Almoço", "Lanche 
 Inclua apenas refeições que tenham alimentos identificados. Some corretamente o totalMacros.`
 
 export async function POST(req: NextRequest) {
+  // ── 1. Parse request body ─────────────────────────────────────────────────
   const body = await req.json().catch(() => null)
   const raw  = body?.text?.trim()
+  console.log('[parse-diet] input length:', raw?.length ?? 0)
+
   if (!raw)               return NextResponse.json({ error: 'text is required' }, { status: 400 })
   if (raw.length > 10000) return NextResponse.json({ error: 'text too long' },    { status: 400 })
 
@@ -63,7 +77,10 @@ export async function POST(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ error: 'AI not configured' }, { status: 503 })
 
   const text = sanitize(raw)
+  console.log('[parse-diet] sanitized length:', text.length)
 
+  // ── 2. Call Anthropic ─────────────────────────────────────────────────────
+  let responseText = ''
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -79,52 +96,83 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    if (!res.ok) return NextResponse.json({ error: 'Upstream error' }, { status: 502 })
+    console.log('[parse-diet] anthropic status:', res.status)
 
-    const data         = await res.json()
-    const responseText = (data?.content?.[0]?.text ?? '').trim()
-
-    // Robust JSON extraction
-    const start = responseText.indexOf('{')
-    const end   = responseText.lastIndexOf('}')
-    if (start === -1 || end === -1 || end <= start) {
-      return NextResponse.json({ error: 'Parse failed' }, { status: 500 })
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => '')
+      console.error('[parse-diet] anthropic error body:', errBody)
+      return emptyResult(`upstream_${res.status}: ${errBody.slice(0, 200)}`)
     }
 
-    let parsed: any
+    const data = await res.json()
+    responseText = (data?.content?.[0]?.text ?? '').trim()
+    console.log('[parse-diet] response length:', responseText.length)
+    console.log('[parse-diet] response preview:', responseText.slice(0, 300))
+  } catch (fetchErr) {
+    console.error('[parse-diet] fetch error:', fetchErr)
+    return emptyResult(`fetch_error: ${String(fetchErr).slice(0, 200)}`)
+  }
+
+  // ── 3. Extract JSON ───────────────────────────────────────────────────────
+  const start = responseText.indexOf('{')
+  const end   = responseText.lastIndexOf('}')
+  console.log('[parse-diet] JSON bounds: start=', start, 'end=', end)
+
+  if (start === -1 || end === -1 || end <= start) {
+    return emptyResult(`no_json_found. raw: ${responseText.slice(0, 300)}`)
+  }
+
+  let parsed: any
+  try {
+    parsed = JSON.parse(responseText.slice(start, end + 1))
+    console.log('[parse-diet] JSON parsed OK, meals keys:', Object.keys(parsed?.meals ?? {}))
+  } catch (parseErr1) {
+    console.warn('[parse-diet] first parse failed, trying cleaned:', parseErr1)
     try {
-      parsed = JSON.parse(responseText.slice(start, end + 1))
-    } catch {
       const cleaned = responseText.slice(start, end + 1).replace(/[\x00-\x1F\x7F]/g, ' ')
       parsed = JSON.parse(cleaned)
+      console.log('[parse-diet] cleaned parse OK')
+    } catch (parseErr2) {
+      console.error('[parse-diet] both parses failed:', parseErr2)
+      return emptyResult(`json_parse_error: ${String(parseErr2).slice(0, 200)}`)
     }
-
-    if (!parsed?.meals || typeof parsed.meals !== 'object') {
-      return NextResponse.json({ error: 'Invalid structure' }, { status: 500 })
-    }
-
-    // Sanitize numeric fields
-    for (const items of Object.values(parsed.meals) as any[][]) {
-      for (const item of items) {
-        item.grams = Number(item.grams) || 100
-        item.kcal  = Number(item.kcal)  || 0
-        item.p     = Number(item.p)     || 0
-        item.c     = Number(item.c)     || 0
-        item.f     = Number(item.f)     || 0
-        item.confidence = item.confidence === 'low' ? 'low' : 'high'
-      }
-    }
-
-    // Recompute totalMacros from items
-    let kcal = 0, p = 0, c = 0, f = 0
-    for (const items of Object.values(parsed.meals) as any[][]) {
-      for (const item of items) { kcal += item.kcal; p += item.p; c += item.c; f += item.f }
-    }
-    parsed.totalMacros = { kcal: Math.round(kcal), p: +p.toFixed(1), c: +c.toFixed(1), f: +f.toFixed(1) }
-    parsed.success = true
-
-    return NextResponse.json(parsed)
-  } catch (e) {
-    return NextResponse.json({ error: 'Request failed' }, { status: 500 })
   }
+
+  // ── 4. Validate meals ─────────────────────────────────────────────────────
+  if (!parsed?.meals || typeof parsed.meals !== 'object') {
+    console.error('[parse-diet] no meals object. parsed keys:', Object.keys(parsed ?? {}))
+    return emptyResult(`no_meals_key. keys: ${Object.keys(parsed ?? {}).join(', ')}`)
+  }
+
+  // ── 5. Sanitize numeric fields ────────────────────────────────────────────
+  for (const [mealName, items] of Object.entries(parsed.meals) as [string, any[]][]) {
+    if (!Array.isArray(items)) {
+      console.warn('[parse-diet] meal not array:', mealName, typeof items)
+      parsed.meals[mealName] = []
+      continue
+    }
+    for (const item of items) {
+      item.grams = Number(item.grams) || 100
+      item.kcal  = Number(item.kcal)  || 0
+      item.p     = Number(item.p)     || 0
+      item.c     = Number(item.c)     || 0
+      item.f     = Number(item.f)     || 0
+      item.confidence = item.confidence === 'low' ? 'low' : 'high'
+    }
+    // Remove empty meal
+    if (parsed.meals[mealName].length === 0) delete parsed.meals[mealName]
+  }
+
+  // ── 6. Recompute totalMacros ──────────────────────────────────────────────
+  let kcal = 0, p = 0, c = 0, f = 0
+  for (const items of Object.values(parsed.meals) as any[][]) {
+    for (const item of items) { kcal += item.kcal; p += item.p; c += item.c; f += item.f }
+  }
+  parsed.totalMacros = { kcal: Math.round(kcal), p: +p.toFixed(1), c: +c.toFixed(1), f: +f.toFixed(1) }
+  parsed.success = true
+
+  const totalItems = Object.values(parsed.meals as Record<string, any[]>).reduce((s, a) => s + a.length, 0)
+  console.log('[parse-diet] done. meals:', Object.keys(parsed.meals).length, 'items:', totalItems, 'kcal:', parsed.totalMacros.kcal)
+
+  return NextResponse.json(parsed)
 }
