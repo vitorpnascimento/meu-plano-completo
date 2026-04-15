@@ -4,16 +4,12 @@ export async function POST(req: NextRequest) {
   try {
     const { text } = await req.json();
     
-    if (!text || text.trim().length < 20) {
+    if (!text || text.trim().length < 10) {
       return NextResponse.json({
         meals: {},
-        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-        debugError: "text_too_short"
+        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 }
       }, { status: 200 });
     }
-
-    console.log("[parse-diet] input length:", text.length);
-    console.log("[parse-diet] API key presente:", !!process.env.ANTHROPIC_API_KEY);
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -24,141 +20,90 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         model: "claude-haiku-4-20250307",
-        max_tokens: 1000,
-        messages: [
-          {
-            role: "user",
-            content: `Você é um assistente para app de dieta. Você SEMPRE retorna JSON válido.
+        max_tokens: 2000,
+        messages: [{
+          role: "user",
+          content: `VOCÊ DEVE RETORNAR APENAS JSON VÁLIDO. NADA DE TEXTO, MARKDOWN OU EXPLICAÇÕES.
 
-DIETA DO USUÁRIO:
+Texto da dieta do usuário:
 ${text}
 
-TAREFA: Extrair TODOS os alimentos mencionados e seus macros APROXIMADOS.
+EXTRAIR ALIMENTOS E SEUS MACROS.
 
-ACEITA QUALQUER FORMATO:
-- "Café: 2 ovos, 1 pão"
-- "Almoço: 150g frango, arroz, feijão"
-- "Lanche: 1 banana, 2 colheres amendoim"
-- Até mesmo listas sem estrutura clara
-
-RETORNE SEMPRE este JSON (mesmo com estimativas):
+RETORNE ESTE JSON EXATO (preencha com os dados extraídos):
 {
   "meals": {
     "Café da Manhã": [
-      { "food": "ovo", "quantity": "2 unidades", "kcal": 155, "protein": 12, "carbs": 1, "fat": 11 }
+      {"food": "ovo", "quantity": "2", "unit": "unidade", "kcal": 155, "protein": 12, "carbs": 1, "fat": 11},
+      {"food": "pão", "quantity": "1", "unit": "unidade", "kcal": 80, "protein": 2, "carbs": 15, "fat": 1}
     ],
     "Almoço": [
-      { "food": "frango", "quantity": "150g", "kcal": 280, "protein": 52, "carbs": 0, "fat": 8 }
+      {"food": "frango", "quantity": "150", "unit": "g", "kcal": 280, "protein": 52, "carbs": 0, "fat": 8},
+      {"food": "arroz", "quantity": "100", "unit": "g", "kcal": 130, "protein": 3, "carbs": 28, "fat": 0},
+      {"food": "feijão", "quantity": "100", "unit": "g", "kcal": 100, "protein": 8, "carbs": 18, "fat": 0}
+    ],
+    "Lanche": [
+      {"food": "banana", "quantity": "1", "unit": "unidade", "kcal": 90, "protein": 1, "carbs": 23, "fat": 0}
     ]
   },
-  "totals": {
-    "kcal": 0,
-    "protein": 0,
-    "carbs": 0,
-    "fat": 0
-  }
+  "totals": {"kcal": 835, "protein": 78, "carbs": 85, "fat": 20}
 }
 
-REGRAS:
-1. Se não achar quantidade exata, ESTIME (ex: "1 pão" = 80-150g)
-2. Use macros PADRÃO da TACO para cada alimento
-3. SEM "confidence" ou avisos - apenas retorne o JSON
-4. Se o usuário mencionar "sal", "água", "café puro" SEM quantidade, IGNORE
-5. Agrupe por refeição/horário mencionado
-6. Sempre retorne válido JSON mesmo com dados incompletos
+REGRAS OBRIGATÓRIAS:
+1. SEMPRE retorne válido JSON - nunca markdown, código ou texto
+2. Se não souber quantidade exata, ESTIME razoavelmente
+3. Use macros PADRÃO da TACO (banco de dados alimentar brasileiro)
+4. Agrupe por refeição/horário mencionado no texto
+5. Se alimento não tem quantidade, estime uma razoável
+6. SEM aspas extras, SEM comentários, SEM explicações
+7. Ignore: água, café puro, chá puro, sal, temperos SEM quantidade
+8. Retorne APENAS JSON válido, nada mais
 
-Retorne APENAS o JSON, sem markdown ou texto extra.`
-          }
-        ]
+SEJA LENIENTE - extraia qualquer coisa que pareça ser um alimento.`
+        }]
       })
     });
 
-    if (!response.ok) {
-      console.error("[parse-diet] API error:", response.status, response.statusText);
-      return NextResponse.json({
-        meals: {},
-        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-        debugError: `api_error_${response.status}`
-      }, { status: 200 });
-    }
-
     const data = await response.json();
-    console.log("[parse-diet] response:", data);
+    let jsonText = "";
 
-    if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
-      console.error("[parse-diet] no content in response");
-      return NextResponse.json({
-        meals: {},
-        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-        debugError: "no_content"
-      }, { status: 200 });
-    }
-
-    const textContent = data.content.find((block: any) => block.type === "text");
-    if (!textContent) {
-      console.error("[parse-diet] no text content found");
-      return NextResponse.json({
-        meals: {},
-        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-        debugError: "no_text_content"
-      }, { status: 200 });
-    }
-
-    let jsonText = textContent.text.trim();
-    
-    if (jsonText.startsWith("```")) {
-      jsonText = jsonText.replace(/```json?\n?/g, "").replace(/```$/g, "").trim();
-    }
-
-    console.log("[parse-diet] cleaned text:", jsonText.substring(0, 200));
-
-    let parsedData;
-    try {
-      parsedData = JSON.parse(jsonText);
-    } catch (e) {
-      console.error("[parse-diet] JSON parse error:", e);
-      return NextResponse.json({
-        meals: {},
-        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-        debugError: "json_parse_error"
-      }, { status: 200 });
-    }
-
-    let totalKcal = 0;
-    let totalProtein = 0;
-    let totalCarbs = 0;
-    let totalFat = 0;
-
-    if (parsedData.meals && typeof parsedData.meals === "object") {
-      for (const mealName in parsedData.meals) {
-        const items = parsedData.meals[mealName];
-        if (Array.isArray(items)) {
-          for (const item of items) {
-            totalKcal += (item.kcal || 0);
-            totalProtein += (item.protein || 0);
-            totalCarbs += (item.carbs || 0);
-            totalFat += (item.fat || 0);
-          }
+    if (data.content && Array.isArray(data.content)) {
+      const textBlock = data.content.find((b: any) => b.type === "text");
+      if (textBlock && textBlock.text) {
+        jsonText = textBlock.text.trim();
+        if (jsonText.startsWith("```")) {
+          jsonText = jsonText.replace(/```json?\n?/g, "").replace(/```$/g, "").trim();
         }
       }
     }
 
-    return NextResponse.json({
-      meals: parsedData.meals || {},
-      totals: {
-        kcal: Math.round(totalKcal),
-        protein: Math.round(totalProtein),
-        carbs: Math.round(totalCarbs),
-        fat: Math.round(totalFat)
-      }
-    }, { status: 200 });
+    try {
+      const parsed = JSON.parse(jsonText);
+      const meals = parsed.meals || {};
+      const totals = parsed.totals || { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+      
+      return NextResponse.json({
+        meals,
+        totals: {
+          kcal: Math.round(totals.kcal || 0),
+          protein: Math.round(totals.protein || 0),
+          carbs: Math.round(totals.carbs || 0),
+          fat: Math.round(totals.fat || 0)
+        }
+      }, { status: 200 });
+    } catch (e) {
+      return NextResponse.json({
+        meals: {},
+        totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+        error: "parse_failed"
+      }, { status: 200 });
+    }
 
   } catch (error) {
-    console.error("[parse-diet] catch error:", error instanceof Error ? error.message : error);
     return NextResponse.json({
       meals: {},
       totals: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-      debugError: error instanceof Error ? error.message : "unknown_error"
+      error: "server_error"
     }, { status: 200 });
   }
 }
