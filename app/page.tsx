@@ -498,6 +498,9 @@ export default function Home() {
   // ── Onboarding ───────────────────────────────────────────────────────────────
   // 0=off  1=modal boas-vindas  2=hint calc  3=hint dieta  4=done toast
   const [onboardingStep, setOnboardingStep] = useState<0|1|2|3|4>(0)
+  // Tela dedicada de onboarding (fluxo guiado: passo 1=calc, passo 2=gerar dieta)
+  const [onboardingScreen,     setOnboardingScreen]     = useState(false)
+  const [onboardingScreenStep, setOnboardingScreenStep] = useState<1|2>(1)
 
   // ── Setup gate ───────────────────────────────────────────────────────────────
   // Sugestão de regerar dieta quando meta calórica muda
@@ -1222,6 +1225,11 @@ export default function Home() {
     const ng = { ...userGoals, cals }
     setUserGoals(ng)
     save({ userGoals: ng })
+    // Tela dedicada de onboarding: avança para passo 2 sem sair da tela
+    if (onboardingScreen) {
+      setOnboardingScreenStep(2)
+      return
+    }
     // Navega para Config > Gerar Dieta
     setActiveTab('config')
     setConfigSections(s => ({ ...s, dieta: true, calc: false }))
@@ -1350,7 +1358,15 @@ export default function Home() {
     save({ meals: nm, userGoals: ng })
     setGeneratedDiet(null)
     setActiveTab('hoje')
-    // Conclui onboarding
+    // Tela dedicada de onboarding: fecha a tela e marca como concluído
+    if (onboardingScreen) {
+      setOnboardingScreen(false)
+      setOnboardingStep(4)
+      if (authUser) localStorage.setItem(`onboarding_done_${authUser.uid}`, '1')
+      else          localStorage.setItem('onboarding_done', '1')
+      return
+    }
+    // Conclui onboarding clássico
     if (onboardingStep === 3) {
       setOnboardingStep(4)
       // Marca como concluído
@@ -1475,6 +1491,341 @@ export default function Home() {
 
   if (firebaseConfigured && !authUser) {
     return <LoginScreen />
+  }
+
+  // ── Tela dedicada de onboarding ──────────────────────────────────────────────
+
+  if (onboardingScreen) {
+    const totalKcalOnb = generatedDiet ? generatedDiet.reduce((s, m) => s + m.actualKcal, 0) : 0
+    const targetOnb    = parseInt(dietTarget) || 1
+    const diffOnb      = totalKcalOnb - targetOnb
+    const diffColorOnb = Math.abs(diffOnb) <= 100 ? 'var(--success)' : diffOnb > 0 ? 'var(--error)' : 'var(--warning)'
+    const diffTextOnb  = Math.abs(diffOnb) <= 100 ? '✅ No alvo' : diffOnb > 0 ? `+${diffOnb} kcal acima` : `${Math.abs(diffOnb)} kcal abaixo`
+
+    return (
+      <div className="onb-screen">
+        {/* Header */}
+        <div className="onb-header">
+          <div className="onb-logo">💪 Meu Plano</div>
+          <div className="onb-progress-row">
+            <div className={`onb-step-dot ${onboardingScreenStep >= 1 ? 'active' : ''} ${onboardingScreenStep > 1 ? 'done' : ''}`}>
+              {onboardingScreenStep > 1 ? '✓' : '1'}
+            </div>
+            <div className={`onb-step-connector ${onboardingScreenStep > 1 ? 'done' : ''}`} />
+            <div className={`onb-step-dot ${onboardingScreenStep >= 2 ? 'active' : ''}`}>2</div>
+          </div>
+          <div className="onb-step-subtitle">
+            {onboardingScreenStep === 1
+              ? '🧮 Passo 1 — Calcule sua meta calórica'
+              : '🍽️ Passo 2 — Gere sua dieta personalizada'}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="onb-body">
+
+          {/* ── Passo 1: Calculadora ── */}
+          {onboardingScreenStep === 1 && (
+            <div className="onb-step-content">
+              {/* Bioimpedância */}
+              <div className="bio-section">
+                <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
+                  📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
+                </button>
+                {showBio && (
+                  <div className="bio-content">
+                    <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
+                      <div className="bio-upload-icon">📊</div>
+                      <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
+                      <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
+                    </div>
+                    <input ref={bioFileRef} type="file" accept=".txt,.csv,.text" style={{ display:'none' }}
+                      onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(applyBioFile) }} />
+                    <div className="calc-field" style={{ marginTop:10 }}>
+                      <label className="calc-label">% Gordura Corporal <span className="calc-unit">(se conhecido)</span></label>
+                      <input type="number" className="login-input" value={calcGordura} placeholder="Ex: 22.5"
+                        onChange={e => setCalcGordura(e.target.value)} />
+                    </div>
+                    {calcGordura && <div className="bio-formula-note">✅ Usando Katch-McArdle (mais preciso com % gordura)</div>}
+                  </div>
+                )}
+              </div>
+              {/* Dados principais */}
+              <div className="calc-grid" style={{ marginTop:12 }}>
+                {([
+                  { label:'Peso', unit:'kg',    val:calcPeso,   set:setCalcPeso   },
+                  { label:'Altura', unit:'cm',  val:calcAltura, set:setCalcAltura },
+                  { label:'Idade', unit:'anos', val:calcIdade,  set:setCalcIdade  },
+                ] as { label:string; unit:string; val:string; set:(v:string)=>void }[]).map(({ label, unit, val, set }) => (
+                  <div key={label} className="calc-field">
+                    <label className="calc-label">{label} <span className="calc-unit">({unit})</span></label>
+                    <input type="number" className="login-input" value={val} onChange={e => set(e.target.value)} placeholder="0" />
+                  </div>
+                ))}
+                <div className="calc-field">
+                  <label className="calc-label">Sexo</label>
+                  <select className="login-input" value={calcSexo} onChange={e => setCalcSexo(e.target.value as 'M'|'F')}>
+                    <option value="M">Masculino</option>
+                    <option value="F">Feminino</option>
+                  </select>
+                </div>
+              </div>
+              <div className="calc-field" style={{ marginTop:10 }}>
+                <label className="calc-label">Nível de Atividade</label>
+                <select className="login-input" value={calcAtividade} onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
+                  <option value="sed">Sedentário — pouco ou nenhum exercício</option>
+                  <option value="leve">Leve — exercício 1–3×/semana</option>
+                  <option value="mod">Moderado — exercício 3–5×/semana</option>
+                  <option value="int">Intenso — exercício 5–7×/semana</option>
+                  <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
+                </select>
+              </div>
+              <div className="calc-field" style={{ marginTop:10 }}>
+                <label className="calc-label">Objetivo Principal</label>
+                <div className="calc-obj-row">
+                  {([
+                    { v:'emagrecer', label:'📉 Emagrecer' },
+                    { v:'manter',    label:'➡️ Manter'    },
+                    { v:'ganhar',    label:'📈 Ganhar'     },
+                  ] as const).map(({ v, label }) => (
+                    <button key={v} className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
+                      onClick={() => setCalcObjetivo(v)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
+                disabled={!calcPeso || !calcAltura || !calcIdade}>
+                🧮 Calcular
+              </button>
+              {calcResult && (
+                <div className="calc-result-box">
+                  <div className="calc-result-imc" style={{ color: calcResult.imcColor }}>
+                    IMC: <strong>{calcResult.imc}</strong> — {calcResult.imcClass}
+                  </div>
+                  <div className="calc-result-row">
+                    <span>Taxa Metabólica Basal (TMB){calcGordura ? ' · Katch-McArdle' : ''}</span>
+                    <span><strong>{calcResult.tmb.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                  </div>
+                  <div className="calc-result-row">
+                    <span>Gasto Total Diário (TDEE)</span>
+                    <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
+                  </div>
+                  <div className="calc-options-grid">
+                    {([
+                      { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/sem' },
+                      { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
+                      { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/sem' },
+                    ] as const).map(({ obj, label, val, desc }) => (
+                      <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
+                        <div className="calc-option-label">{label}</div>
+                        <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
+                        <div className="calc-option-desc">{desc}</div>
+                        <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
+                          onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>Usar →</button>
+                      </div>
+                    ))}
+                  </div>
+                  {calcObjetivo === 'emagrecer' && (
+                    <div className="deficit-section">
+                      <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
+                      <div className="deficit-row">
+                        {([
+                          { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
+                          { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
+                          { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
+                        ] as const).map(({ id, label, pct, desc }) => {
+                          const cals = Math.round(calcResult.tdee * (1 - pct / 100))
+                          return (
+                            <button key={id} className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
+                              onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
+                              <div className="deficit-btn-label">{label} −{pct}%</div>
+                              <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
+                              <div className="deficit-btn-desc">{desc}</div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Passo 2: Gerar Dieta ── */}
+          {onboardingScreenStep === 2 && (
+            <div className="onb-step-content">
+              <div className="calc-field" style={{ marginTop:8 }}>
+                <label className="calc-label">Meta calórica diária</label>
+                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                  <input type="number" className="login-input" style={{ flex:1 }}
+                    value={dietTarget} onChange={e => setDietTarget(e.target.value)} placeholder="Ex: 1600" />
+                  <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+                </div>
+              </div>
+              <div className="calc-field" style={{ marginTop:12 }}>
+                <label className="calc-label">Preferência de alimentos</label>
+                <div className="calc-obj-row">
+                  <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}>✨ Melhor qualidade</button>
+                  <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}>💰 Simples / Barato</button>
+                </div>
+              </div>
+              <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
+                disabled={!dietTarget || parseInt(dietTarget) < 500}>
+                🚀 Gerar Dieta Automaticamente
+              </button>
+
+              {generatedDiet && (
+                <>
+                  <div className="diet-gen-summary">
+                    <div className="diet-gen-total">
+                      {totalKcalOnb.toLocaleString('pt-BR')} kcal
+                      <span className="diet-gen-pct" style={{ color: diffColorOnb }}> · {diffTextOnb}</span>
+                    </div>
+                    <div className="diet-gen-macros-row">
+                      <span>P {generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.p, 0).toFixed(0)}g</span>
+                      <span>C {generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.c, 0).toFixed(0)}g</span>
+                      <span>G {generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0).toFixed(0)}g</span>
+                    </div>
+                    {Math.abs(diffOnb) > 150 && (
+                      <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
+                        🔄 Reajustar para meta
+                      </button>
+                    )}
+                    <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
+                      💾 Salvar e começar!
+                    </button>
+                  </div>
+
+                  {generatedDiet.map((meal, mi) => (
+                    <div key={meal.mealId} className="diet-gen-meal">
+                      <div className="diet-gen-meal-header">
+                        <span className="diet-gen-meal-title">{meal.title}</span>
+                        <span className="diet-gen-meal-kcal">
+                          {meal.actualKcal} kcal
+                          <span className="diet-gen-pct"> ({Math.round(meal.actualKcal / targetOnb * 100)}%)</span>
+                        </span>
+                      </div>
+                      {meal.items.map((item, ii) => (
+                        <div key={ii} className="diet-gen-item">
+                          <div className="diet-gen-item-body">
+                            <div className="diet-gen-item-name">
+                              {item.food.nome}
+                              {item.food.id === -1 && <span className="diet-ia-badge"> IA</span>}
+                            </div>
+                            <div className="diet-gen-item-detail">
+                              {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
+                              {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                            </div>
+                          </div>
+                          <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          )}
+
+        </div>
+
+        {/* Footer */}
+        <div className="onb-footer">
+          <button className="onb-skip-btn"
+            onClick={() => {
+              setOnboardingScreen(false)
+              setOnboardingStep(0)
+              if (authUser) localStorage.setItem(`onboarding_done_${authUser.uid}`, '1')
+              else          localStorage.setItem('onboarding_done', '1')
+              setActiveTab('config')
+              setConfigSections(prev => ({ ...prev, cardapio: true }))
+            }}>
+            Pular e montar manualmente →
+          </button>
+        </div>
+
+        {/* Modal de substituição de item (dentro da tela de onboarding) */}
+        {dietSubModal !== null && generatedDiet && (() => {
+          const item = generatedDiet[dietSubModal.mealIdx]?.items[dietSubModal.itemIdx]
+          if (!item) return null
+          return (
+            <div className="modal-overlay" onClick={() => setDietSubModal(null)}>
+              <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+                <div className="modal-title">🔄 Substituir Alimento na Dieta</div>
+                <div className="diet-sub-original">
+                  <strong>{item.food.nome}</strong> · {item.grams}g · {item.kcal} kcal
+                  <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
+                    A porção será ajustada para manter ~{item.kcal} kcal
+                  </div>
+                </div>
+                {dietSubs.length > 0 && (
+                  <>
+                    <div className="sub-section-label">Sugestões similares</div>
+                    <div className="taco-results">
+                      {dietSubs.map(sub => {
+                        const rawG = sub.kcal > 0 ? (item.kcal / sub.kcal) * 100 : 50
+                        const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+                        const mult = g / 100
+                        return (
+                          <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
+                            <div className="taco-result-name">
+                              {sub.nome} · {g}g
+                              {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
+                            </div>
+                            <div className="taco-result-cat">
+                              {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+                <div className="sub-search-section">
+                  <div className="sub-section-label">🔍 Buscar qualquer alimento</div>
+                  <input type="text" className="login-input"
+                    placeholder="Ex: batata doce, atum, tofu, peixe..."
+                    value={dietSubSearchQuery} autoComplete="off"
+                    onChange={e => handleDietSubSearch(e.target.value)} />
+                  {dietSubSearching && (
+                    <div className="sub-search-loading"><span>🤖 Consultando IA...</span></div>
+                  )}
+                  {dietSubSearchRes.length > 0 && (
+                    <div className="taco-results" style={{ marginTop:6 }}>
+                      {dietSubSearchRes.map((res, i) => {
+                        const rawG = res.food.kcal > 0 ? (item.kcal / res.food.kcal) * 100 : res.grams
+                        const g    = Math.max(10, Math.min(600, Math.round(rawG / 5) * 5))
+                        const mult = g / 100
+                        return (
+                          <button key={i} className="taco-result-item" onClick={() => applyDietSubFromSearch(res)}>
+                            <div className="taco-result-name">
+                              {res.food.nome} · {g}g
+                              {res.isAI && <span className="diet-ia-badge"> IA</span>}
+                            </div>
+                            <div className="taco-result-cat">
+                              {Math.round(res.food.kcal * mult)} kcal · P{+(res.food.p * mult).toFixed(1)}g · C{+(res.food.c * mult).toFixed(1)}g · G{+(res.food.f * mult).toFixed(1)}g
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {dietSubSearchQuery.length >= 2 && !dietSubSearching && dietSubSearchRes.length === 0 && (
+                    <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:6 }}>
+                      Nenhum resultado para "{dietSubSearchQuery}". Tente outra palavra.
+                    </div>
+                  )}
+                </div>
+                <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setDietSubModal(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )
+        })()}
+      </div>
+    )
   }
 
   // ── JSX principal ────────────────────────────────────────────────────────────
@@ -2288,8 +2639,8 @@ export default function Home() {
             <button className="btn" style={{ width: '100%' }}
               onClick={() => {
                 setOnboardingStep(2)
-                setActiveTab('config')
-                setConfigSections(s => ({ ...s, calc: true }))
+                setOnboardingScreen(true)
+                setOnboardingScreenStep(1)
               }}>
               🧮 Calcular meta e gerar dieta
             </button>
