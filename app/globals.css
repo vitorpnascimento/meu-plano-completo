@@ -2918,11 +2918,28 @@ html.dark .diet-paste-textarea:focus { border-color: #60A5FA; }
   font-size: 13px;
   color: var(--error);
   margin-top: 8px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: rgba(239,68,68,.08);
   border-radius: 6px;
   border: 1px solid rgba(239,68,68,.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
+.diet-paste-retry-btn {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--error);
+  color: var(--error);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.diet-paste-retry-btn:hover { background: rgba(239,68,68,.1); }
 
 .diet-paste-success {
   font-size: 13px;

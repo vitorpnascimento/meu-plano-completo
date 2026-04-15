@@ -1147,7 +1147,7 @@ export default function Home() {
       setDietPasteResult(data)
       setDietPasteStep('preview')
     } catch {
-      setDietPasteError('Não foi possível processar. Verifique o texto e tente novamente.')
+      setDietPasteError('A IA não conseguiu interpretar esse formato. Tente simplificar o texto — ex: "Café: 2 ovos, 1 pão. Almoço: 150g frango, arroz, feijão."')
       setDietPasteStep('input')
     }
   }
@@ -3613,7 +3613,14 @@ export default function Home() {
                       onChange={e => setDietPasteText(e.target.value)}
                     />
                     {dietPasteError && (
-                      <div className="diet-paste-error">{dietPasteError}</div>
+                      <div className="diet-paste-error">
+                        <div>{dietPasteError}</div>
+                        <button
+                          className="diet-paste-retry-btn"
+                          onClick={handleParseDiet}>
+                          🔄 Tentar novamente
+                        </button>
+                      </div>
                     )}
                     <button
                       className="btn"
