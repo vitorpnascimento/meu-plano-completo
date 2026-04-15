@@ -505,8 +505,8 @@ export default function Home() {
   // ── Setup gate ───────────────────────────────────────────────────────────────
   // Sugestão de regerar dieta quando meta calórica muda
   const [suggestRegen, setSuggestRegen] = useState(false)
-  // Seções expansíveis do Config
-  const [configSections, setConfigSections] = useState<Record<string, boolean>>({ metas: true })
+  // Seções expansíveis do Config — todas fechadas por padrão
+  const [configSections, setConfigSections] = useState<Record<string, boolean>>({})
 
   const [showFinalize,      setShowFinalize]      = useState(false)
   const [finObs,            setFinObs]            = useState('')
@@ -1610,35 +1610,44 @@ export default function Home() {
                     <span>Gasto Total Diário (TDEE)</span>
                     <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
                   </div>
+                  {/* Cards de objetivo — selecionáveis */}
                   <div className="calc-options-grid">
                     {([
-                      { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/sem' },
+                      { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
                       { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
-                      { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/sem' },
+                      { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
                     ] as const).map(({ obj, label, val, desc }) => (
-                      <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
+                      <div key={obj}
+                        className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}
+                        onClick={() => { setCalcObjetivo(obj); setCalcDeficit(null) }}>
                         <div className="calc-option-label">{label}</div>
                         <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
                         <div className="calc-option-desc">{desc}</div>
-                        <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
-                          onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>Usar →</button>
                       </div>
                     ))}
                   </div>
-                  {calcObjetivo === 'emagrecer' && (
+                  {/* Seleção de intensidade (emagrecer ou ganhar) */}
+                  {(calcObjetivo === 'emagrecer' || calcObjetivo === 'ganhar') && (
                     <div className="deficit-section">
-                      <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
+                      <div className="deficit-title">
+                        {calcObjetivo === 'emagrecer' ? '📌 Escolha o déficit:' : '📌 Escolha o superávit:'}
+                      </div>
                       <div className="deficit-row">
                         {([
                           { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
                           { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
                           { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
                         ] as const).map(({ id, label, pct, desc }) => {
-                          const cals = Math.round(calcResult.tdee * (1 - pct / 100))
+                          const cals = calcObjetivo === 'emagrecer'
+                            ? Math.round(calcResult.tdee * (1 - pct / 100))
+                            : Math.round(calcResult.tdee * (1 + pct / 100))
                           return (
-                            <button key={id} className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
-                              onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
-                              <div className="deficit-btn-label">{label} −{pct}%</div>
+                            <button key={id}
+                              className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
+                              onClick={() => setCalcDeficit(id)}>
+                              <div className="deficit-btn-label">
+                                {label} {calcObjetivo === 'emagrecer' ? `−${pct}%` : `+${pct}%`}
+                              </div>
                               <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
                               <div className="deficit-btn-desc">{desc}</div>
                             </button>
@@ -1647,6 +1656,25 @@ export default function Home() {
                       </div>
                     </div>
                   )}
+                  {/* Botão único Usar → */}
+                  <button
+                    className="btn"
+                    style={{ marginTop:14, width:'100%' }}
+                    disabled={calcObjetivo !== 'manter' && calcDeficit === null}
+                    onClick={() => {
+                      if (calcObjetivo === 'manter') {
+                        useDietCals(calcResult.manter, 'manter')
+                      } else {
+                        const pcts = { leve:10, mod:15, agr:20 }
+                        const pct  = pcts[calcDeficit!]
+                        const cals = calcObjetivo === 'emagrecer'
+                          ? Math.round(calcResult.tdee * (1 - pct / 100))
+                          : Math.round(calcResult.tdee * (1 + pct / 100))
+                        useDietCals(cals, calcObjetivo)
+                      }
+                    }}>
+                    🧮 Usar →
+                  </button>
                 </div>
               )}
             </div>
@@ -3360,35 +3388,44 @@ export default function Home() {
                       <span>Gasto Total Diário (TDEE)</span>
                       <span><strong>{calcResult.tdee.toLocaleString('pt-BR')}</strong> kcal/dia</span>
                     </div>
+                    {/* Cards de objetivo — selecionáveis */}
                     <div className="calc-options-grid">
                       {([
-                        { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit de 500 kcal/dia · ~0,5kg/sem' },
+                        { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
                         { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
-                        { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit de 500 kcal/dia · ~0,5kg/sem' },
+                        { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
                       ] as const).map(({ obj, label, val, desc }) => (
-                        <div key={obj} className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}>
+                        <div key={obj}
+                          className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}
+                          onClick={() => { setCalcObjetivo(obj); setCalcDeficit(null) }}>
                           <div className="calc-option-label">{label}</div>
                           <div className="calc-option-val">{val.toLocaleString('pt-BR')} kcal/dia</div>
                           <div className="calc-option-desc">{desc}</div>
-                          <button className="btn btn-small" style={{ marginTop:8, width:'100%' }}
-                            onClick={() => { setCalcDeficit(null); useDietCals(val, obj) }}>Usar →</button>
                         </div>
                       ))}
                     </div>
-                    {calcObjetivo === 'emagrecer' && (
+                    {/* Seleção de intensidade (emagrecer ou ganhar) */}
+                    {(calcObjetivo === 'emagrecer' || calcObjetivo === 'ganhar') && (
                       <div className="deficit-section">
-                        <div className="deficit-title">📌 Ou escolha o déficit exato:</div>
+                        <div className="deficit-title">
+                          {calcObjetivo === 'emagrecer' ? '📌 Escolha o déficit:' : '📌 Escolha o superávit:'}
+                        </div>
                         <div className="deficit-row">
                           {([
                             { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
                             { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
                             { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
                           ] as const).map(({ id, label, pct, desc }) => {
-                            const cals = Math.round(calcResult.tdee * (1 - pct / 100))
+                            const cals = calcObjetivo === 'emagrecer'
+                              ? Math.round(calcResult.tdee * (1 - pct / 100))
+                              : Math.round(calcResult.tdee * (1 + pct / 100))
                             return (
-                              <button key={id} className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
-                                onClick={() => { setCalcDeficit(id); useDietCals(cals, 'emagrecer') }}>
-                                <div className="deficit-btn-label">{label} −{pct}%</div>
+                              <button key={id}
+                                className={`deficit-btn ${calcDeficit === id ? 'active' : ''}`}
+                                onClick={() => setCalcDeficit(id)}>
+                                <div className="deficit-btn-label">
+                                  {label} {calcObjetivo === 'emagrecer' ? `−${pct}%` : `+${pct}%`}
+                                </div>
                                 <div className="deficit-btn-cals">{cals.toLocaleString('pt-BR')}</div>
                                 <div className="deficit-btn-desc">{desc}</div>
                               </button>
@@ -3397,6 +3434,25 @@ export default function Home() {
                         </div>
                       </div>
                     )}
+                    {/* Botão único Usar → */}
+                    <button
+                      className="btn"
+                      style={{ marginTop:14, width:'100%' }}
+                      disabled={calcObjetivo !== 'manter' && calcDeficit === null}
+                      onClick={() => {
+                        if (calcObjetivo === 'manter') {
+                          useDietCals(calcResult.manter, 'manter')
+                        } else {
+                          const pcts = { leve:10, mod:15, agr:20 }
+                          const pct  = pcts[calcDeficit!]
+                          const cals = calcObjetivo === 'emagrecer'
+                            ? Math.round(calcResult.tdee * (1 - pct / 100))
+                            : Math.round(calcResult.tdee * (1 + pct / 100))
+                          useDietCals(cals, calcObjetivo)
+                        }
+                      }}>
+                      🧮 Usar →
+                    </button>
                   </div>
                 )}
               </div>
