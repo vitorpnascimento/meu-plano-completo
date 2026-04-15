@@ -91,6 +91,20 @@ interface CalcResult {
   ganhar:   number
 }
 
+interface AIParsedItem {
+  name:       string
+  grams:      number
+  kcal:       number
+  p:          number
+  c:          number
+  f:          number
+  confidence: 'high' | 'low'
+}
+interface AIParsedDiet {
+  meals:       Record<string, AIParsedItem[]>
+  totalMacros: { kcal: number; p: number; c: number; f: number }
+}
+
 interface SubSearchResult {
   food:   TacoFood
   grams:  number
@@ -542,6 +556,14 @@ export default function Home() {
   const [importStats,   setImportStats]   = useState<Record<string, number>>({})
   const [isDragging,    setIsDragging]    = useState(false)
   const importFileRef = useRef<HTMLInputElement>(null)
+
+  // ── Envie sua Dieta Pronta (IA) ──────────────────────────────────────────────
+  const [dietPasteText,    setDietPasteText]    = useState('')
+  const [dietPasteStep,    setDietPasteStep]    = useState<'input'|'processing'|'preview'>('input')
+  const [dietPasteResult,  setDietPasteResult]  = useState<AIParsedDiet | null>(null)
+  const [dietPasteMode,    setDietPasteMode]    = useState<'replace'|'merge'>('replace')
+  const [dietPasteError,   setDietPasteError]   = useState('')
+  const [dietPasteSuccess, setDietPasteSuccess] = useState(false)
 
   // ── Calculadora ──────────────────────────────────────────────────────────────
   const [calcPeso,      setCalcPeso]      = useState('')
@@ -1105,6 +1127,71 @@ export default function Home() {
       }
     })
     setMeals(nm); save({ meals: nm }); setImportStep('done')
+  }
+
+  // ── Ações: Envie sua Dieta Pronta ────────────────────────────────────────────
+
+  const handleParseDiet = async () => {
+    if (!dietPasteText.trim()) return
+    setDietPasteStep('processing')
+    setDietPasteError('')
+    try {
+      const res = await fetch('/api/parse-diet', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ text: dietPasteText }),
+      })
+      if (!res.ok) throw new Error('error')
+      const data: AIParsedDiet = await res.json()
+      if (!data.meals) throw new Error('invalid')
+      setDietPasteResult(data)
+      setDietPasteStep('preview')
+    } catch {
+      setDietPasteError('Não foi possível processar. Verifique o texto e tente novamente.')
+      setDietPasteStep('input')
+    }
+  }
+
+  const applyParsedDiet = () => {
+    if (!dietPasteResult) return
+    // Mapeamento fuzzy: nome da refeição (normalizado) → meal.id
+    const normalize = (s: string) =>
+      s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+    const mealKeyMap: Record<string, string> = {
+      'cafe da manha':   'cafe',  'cafe':    'cafe',
+      'almoco':          'almoco',
+      'lanche da manha': 'lanche', 'lanche da tarde': 'lanche', 'lanche': 'lanche',
+      'jantar':          'jantar',
+      'ceia':            'ceia',
+    }
+    const itemsByMealId: Record<string, MealItem[]> = {}
+    for (const [mealName, items] of Object.entries(dietPasteResult.meals)) {
+      const key    = normalize(mealName)
+      const mealId = mealKeyMap[key] || meals[0]?.id
+      if (!mealId) continue
+      if (!itemsByMealId[mealId]) itemsByMealId[mealId] = []
+      itemsByMealId[mealId].push(...items.map(i => ({
+        id:   newId(),
+        name: `${i.name} (${i.grams}g)`,
+        kcal: Math.round(i.kcal),
+        p:    +i.p.toFixed(1),
+        c:    +i.c.toFixed(1),
+        f:    +i.f.toFixed(1),
+      })))
+    }
+    const nm = meals.map(m => {
+      const newItems = itemsByMealId[m.id]
+      if (!newItems || newItems.length === 0) return m
+      return { ...m, items: dietPasteMode === 'replace' ? newItems : [...m.items, ...newItems] }
+    })
+    setMeals(nm)
+    save({ meals: nm })
+    setDietPasteResult(null)
+    setDietPasteText('')
+    setDietPasteStep('input')
+    setDietPasteSuccess(true)
+    setTimeout(() => setDietPasteSuccess(false), 4000)
+    setConfigSections(prev => ({ ...prev, cardapio: true, dieta_ia: false }))
   }
 
   // ── Ações: Calculadora ───────────────────────────────────────────────────────
@@ -2175,122 +2262,6 @@ export default function Home() {
             <button className="btn btn-cancel" style={{ marginTop: 12 }} onClick={() => setShowTACO(false)}>
               Fechar
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* ══ Modal: Importar Dieta ══ */}
-      {showImport && (
-        <div className="modal-overlay" onClick={() => { if (importStep !== 'processing') setShowImport(false) }}>
-          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">📄 Importar Dieta</div>
-
-            {importStep === 'upload' && (
-              <>
-                <div
-                  className={`import-dropzone ${isDragging ? 'dragging' : ''}`}
-                  onDragOver={e => { e.preventDefault(); setIsDragging(true) }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={e => {
-                    e.preventDefault(); setIsDragging(false)
-                    const file = e.dataTransfer.files[0]
-                    if (file) processImportFile(file)
-                  }}
-                  onClick={() => importFileRef.current?.click()}
-                >
-                  <div className="import-dropzone-icon">📄</div>
-                  <div className="import-dropzone-text">Arraste aqui seu PDF ou arquivo de texto</div>
-                  <div className="import-dropzone-sub">Clique para selecionar · PDF, TXT, DOCX exportado como texto</div>
-                </div>
-                <input
-                  ref={importFileRef}
-                  type="file"
-                  accept=".pdf,.txt,.text"
-                  style={{ display: 'none' }}
-                  onChange={e => {
-                    const file = e.target.files?.[0]
-                    if (file) processImportFile(file)
-                  }}
-                />
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.6 }}>
-                  O sistema detecta automaticamente as refeições (Café da Manhã, Almoço, Lanche, Jantar, Ceia) e compara os alimentos com o banco TACO para extrair as calorias e macros.
-                </div>
-                <button className="btn btn-cancel" style={{ marginTop: 12 }} onClick={() => setShowImport(false)}>
-                  Cancelar
-                </button>
-              </>
-            )}
-
-            {importStep === 'processing' && (
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>Processando {importFile}...</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>Extraindo texto e reconhecendo alimentos</div>
-              </div>
-            )}
-
-            {importStep === 'preview' && importPreview && (
-              <>
-                <div className="import-stats-row">
-                  <span>📁 {importFile}</span>
-                  <span>{importStats._total || 0} alimentos encontrados · {importStats._matched || 0} no TACO</span>
-                </div>
-
-                <div className="import-mode-row">
-                  <label style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>Modo:</label>
-                  <button
-                    className={`import-mode-btn ${importMode === 'replace' ? 'active' : ''}`}
-                    onClick={() => setImportMode('replace')}
-                  >Substituir cardápio</button>
-                  <button
-                    className={`import-mode-btn ${importMode === 'merge' ? 'active' : ''}`}
-                    onClick={() => setImportMode('merge')}
-                  >Adicionar ao existente</button>
-                </div>
-
-                <div className="import-preview-list">
-                  {Object.entries(importPreview).map(([key, foods]) => {
-                    const mealTitle = meals.find(m => m.id === key)?.title || key
-                    if (foods.length === 0) return null
-                    return (
-                      <div key={key} className="import-meal-section">
-                        <div className="import-meal-title">{mealTitle} ({foods.length})</div>
-                        {foods.map((f, i) => (
-                          <div key={i} className={`import-item ${f.tacoMatch ? 'matched' : 'unmatched'}`}>
-                            <div className="import-item-name">{f.name}</div>
-                            <div className="import-item-macros">
-                              {f.tacoMatch
-                                ? `${f.kcal} kcal · P${f.p}g · C${f.c}g · G${f.f}g ✅`
-                                : 'Macros não encontrados no TACO ⚠️'}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })}
-                </div>
-
-                <button className="btn" style={{ marginTop: 12 }} onClick={applyImport}>
-                  ✅ {importMode === 'replace' ? 'Substituir' : 'Adicionar'} cardápio
-                </button>
-                <button className="btn btn-cancel" style={{ marginTop: 6 }} onClick={() => { setImportStep('upload'); setImportFile('') }}>
-                  ← Trocar arquivo
-                </button>
-              </>
-            )}
-
-            {importStep === 'done' && (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>Cardápio importado!</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                  {importStats._total || 0} alimentos adicionados ao seu cardápio.
-                </div>
-                <button className="btn" onClick={() => { setShowImport(false); setImportStep('upload'); setImportFile('') }}>
-                  Fechar
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -3579,10 +3550,6 @@ export default function Home() {
               <div className="config-section-body">
                 <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8 }}>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}>🥗 Buscar TACO</button>
-                  <button className="btn btn-small" style={{ width:'auto', background:'var(--text-secondary)' }}
-                    onClick={() => { setImportStep('upload'); setImportFile(''); setImportPreview(null); setShowImport(true) }}>
-                    📄 Importar Dieta
-                  </button>
                 </div>
                 {meals.map((meal, mealIdx) => (
                   <div key={meal.id} style={{ marginBottom:20 }}>
@@ -3609,6 +3576,125 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Seção: Envie sua Dieta Pronta ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('dieta_ia')}>
+              <div className="config-section-title-group">
+                <span>📨 Envie sua Dieta Pronta</span>
+                <span className="config-section-desc">Cole sua dieta e a IA extrai tudo automaticamente</span>
+              </div>
+              <span className={`config-section-arrow ${configSections.dieta_ia ? 'open' : ''}`}>▼</span>
+            </div>
+            {configSections.dieta_ia && (
+              <div className="config-section-body">
+
+                {/* Sucesso */}
+                {dietPasteSuccess && (
+                  <div className="diet-paste-success">
+                    🎉 Dieta importada com sucesso! Confira em Meu Cardápio.
+                  </div>
+                )}
+
+                {/* Step: input */}
+                {dietPasteStep === 'input' && (
+                  <>
+                    <div style={{ marginTop:8, marginBottom:10, fontSize:13, color:'var(--text-secondary)', lineHeight:1.6 }}>
+                      Cole aqui sua dieta em qualquer formato — lista, tabela, texto livre.
+                      A IA do Claude identifica as refeições, os alimentos e calcula os macros automaticamente.
+                    </div>
+                    <textarea
+                      className="diet-paste-textarea"
+                      placeholder={`Exemplo:\n\nCafé da Manhã:\n- 2 ovos mexidos\n- 1 pão francês\n- 1 copo de leite 200ml\n\nAlmoço:\n- 150g de frango grelhado\n- 4 col sopa de arroz\n- Feijão 1 concha\n- Salada de folhas`}
+                      value={dietPasteText}
+                      onChange={e => setDietPasteText(e.target.value)}
+                    />
+                    {dietPasteError && (
+                      <div className="diet-paste-error">{dietPasteError}</div>
+                    )}
+                    <button
+                      className="btn"
+                      style={{ marginTop:12 }}
+                      disabled={dietPasteText.trim().length < 20}
+                      onClick={handleParseDiet}>
+                      🤖 Processar com IA
+                    </button>
+                  </>
+                )}
+
+                {/* Step: processing */}
+                {dietPasteStep === 'processing' && (
+                  <div className="diet-paste-loading">
+                    <div className="diet-paste-loading-icon">🤖</div>
+                    <div className="diet-paste-loading-text">Analisando sua dieta com IA...</div>
+                    <div className="diet-paste-loading-sub">Identificando alimentos e calculando macros</div>
+                  </div>
+                )}
+
+                {/* Step: preview */}
+                {dietPasteStep === 'preview' && dietPasteResult && (
+                  <>
+                    {/* Totais */}
+                    <div className="diet-paste-totals">
+                      <div className="diet-paste-totals-title">📊 Totais diários extraídos</div>
+                      <div className="diet-paste-totals-row">
+                        <span><strong>{Math.round(dietPasteResult.totalMacros.kcal)}</strong> kcal</span>
+                        <span>P <strong>{dietPasteResult.totalMacros.p.toFixed(0)}g</strong></span>
+                        <span>C <strong>{dietPasteResult.totalMacros.c.toFixed(0)}g</strong></span>
+                        <span>G <strong>{dietPasteResult.totalMacros.f.toFixed(0)}g</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Refeições */}
+                    <div className="diet-paste-meals">
+                      {Object.entries(dietPasteResult.meals).map(([mealName, items]) => (
+                        <div key={mealName} className="diet-paste-meal">
+                          <div className="diet-paste-meal-title">{mealName}</div>
+                          {items.map((item, i) => (
+                            <div key={i} className="diet-paste-item">
+                              <div className="diet-paste-item-left">
+                                <span className="diet-paste-item-conf">
+                                  {item.confidence === 'high' ? '✅' : '⚠️'}
+                                </span>
+                                <div>
+                                  <div className="diet-paste-item-name">{item.name}</div>
+                                  <div className="diet-paste-item-macros">
+                                    {item.grams}g · {Math.round(item.kcal)} kcal · P{item.p.toFixed(1)}g · C{item.c.toFixed(1)}g · G{item.f.toFixed(1)}g
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Modo */}
+                    <div className="diet-paste-mode-row">
+                      <button
+                        className={`import-mode-btn ${dietPasteMode === 'replace' ? 'active' : ''}`}
+                        onClick={() => setDietPasteMode('replace')}>
+                        Substituir cardápio
+                      </button>
+                      <button
+                        className={`import-mode-btn ${dietPasteMode === 'merge' ? 'active' : ''}`}
+                        onClick={() => setDietPasteMode('merge')}>
+                        Adicionar ao existente
+                      </button>
+                    </div>
+
+                    <button className="btn" style={{ marginTop:10 }} onClick={applyParsedDiet}>
+                      ✅ Adicionar ao Cardápio
+                    </button>
+                    <button className="btn btn-cancel" style={{ marginTop:6 }}
+                      onClick={() => { setDietPasteStep('input'); setDietPasteResult(null) }}>
+                      ← Reanalisar
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
