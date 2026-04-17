@@ -2609,8 +2609,8 @@ export default function Home() {
         <div className="header-content">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <div>
-              <h1>💪 Meu Plano</h1>
-              <div className="subtitle">Dieta & Treino</div>
+              <h1>Meu Plano <span className="brand-dot" /></h1>
+              <div className="subtitle">Dieta · Treino · Progresso</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {firebaseConfigured && syncStatus !== 'unconfigured' && (
@@ -2718,7 +2718,7 @@ export default function Home() {
             const mealKcal    = items.reduce((s, it) => s + (activeSubs[it.id]?.kcal ?? it.kcal) * (todayChecked[it.id] ? 1 : 0), 0)
             const mealKcalTotal = items.reduce((s, it) => s + (activeSubs[it.id]?.kcal ?? it.kcal), 0)
             return (
-              <div key={meal.id} className="meal-collapse-card">
+              <div key={meal.id} className={`meal-collapse-card meal--${mealStatus}`}>
                 <div className="meal-collapse-header"
                   onClick={() => setExpandedMeals(prev => ({ ...prev, [meal.id]: !prev[meal.id] }))}>
                   {/* Status dots — one per item: green=checked, gray=unchecked */}
