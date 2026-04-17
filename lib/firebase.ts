@@ -1,5 +1,12 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app'
-import { getDatabase, ref, set, get, Database } from 'firebase/database'
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  onSnapshot,
+  Firestore,
+} from 'firebase/firestore'
 import {
   getAuth,
   createUserWithEmailAndPassword,
@@ -13,7 +20,6 @@ import {
 const firebaseConfig = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain:        process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  databaseURL:       process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
   projectId:         process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket:     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
@@ -23,12 +29,12 @@ const firebaseConfig = {
 export function isFirebaseConfigured(): boolean {
   return !!(
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY &&
-    process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL
+    process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
   )
 }
 
 let _app:  FirebaseApp | null = null
-let _db:   Database    | null = null
+let _db:   Firestore   | null = null
 let _auth: Auth        | null = null
 
 function init(): boolean {
@@ -37,7 +43,7 @@ function init(): boolean {
   if (!isFirebaseConfigured()) return false
   try {
     _app  = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig as any)
-    _db   = getDatabase(_app)
+    _db   = getFirestore(_app)
     _auth = getAuth(_app)
     return true
   } catch (e) {
@@ -91,7 +97,7 @@ export function stripPhotos(data: Record<string, any>): Record<string, any> {
   return { ...data, weightHistory: stripped }
 }
 
-/** Salva dados em users/{uid}. Retorna true em sucesso. */
+/** Salva dados em users/{uid}/data. Retorna true em sucesso. */
 export async function saveUserData(
   uid: string,
   data: Record<string, any>,
@@ -99,7 +105,7 @@ export async function saveUserData(
   if (!init() || !_db || !uid) return false
   try {
     const clean = stripPhotos(data)
-    await set(ref(_db, `users/${uid}`), {
+    await setDoc(doc(_db, 'users', uid), {
       ...clean,
       lastSync: new Date().toISOString(),
     })
@@ -116,10 +122,35 @@ export async function loadUserData(
 ): Promise<Record<string, any> | null> {
   if (!init() || !_db || !uid) return null
   try {
-    const snap = await get(ref(_db, `users/${uid}`))
-    return snap.exists() ? snap.val() : null
+    const snap = await getDoc(doc(_db, 'users', uid))
+    return snap.exists() ? (snap.data() as Record<string, any>) : null
   } catch (e) {
     console.error('[Firebase] load error:', e)
     return null
   }
+}
+
+/**
+ * Assina atualizações em tempo real de users/{uid}.
+ * Chama callback com os dados sempre que houver mudança no Firestore.
+ * Retorna função de cleanup (unsubscribe).
+ */
+export function subscribeToUserData(
+  uid: string,
+  callback: (data: Record<string, any> | null) => void,
+): () => void {
+  if (!init() || !_db || !uid) {
+    callback(null)
+    return () => {}
+  }
+  return onSnapshot(
+    doc(_db, 'users', uid),
+    (snap) => {
+      callback(snap.exists() ? (snap.data() as Record<string, any>) : null)
+    },
+    (err) => {
+      console.error('[Firebase] snapshot error:', err)
+      callback(null)
+    },
+  )
 }

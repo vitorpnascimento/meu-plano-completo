@@ -25,7 +25,7 @@ import {
   subscribeToAuthState,
   logoutUser,
   saveUserData,
-  loadUserData,
+  subscribeToUserData,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
 import {
@@ -729,7 +729,7 @@ export default function Home() {
     return unsub
   }, [applyData, resetState])
 
-  // ── Data Load Effect (dispara quando authUser muda) ─────────────────────────
+  // ── Data Load Effect (real-time Firestore sync) ──────────────────────────────
 
   useEffect(() => {
     if (!isFirebaseConfigured() || !authUser) return
@@ -742,14 +742,17 @@ export default function Home() {
     const localData   = localRaw ? (() => { try { return JSON.parse(localRaw) } catch { return null } })() : null
     const localWH     = localData?.weightHistory || localData?.weights || {}
 
-    loadUserData(authUser.uid)
-      .then(fbData => {
+    let firstSnapshot = true
+
+    const unsub = subscribeToUserData(authUser.uid, (fbData) => {
+      if (firstSnapshot) {
+        firstSnapshot = false
         if (fbData) {
-          // Usuário existente: Firebase é autoritativo, restaura fotos locais
+          // Usuário existente: Firestore é autoritativo, restaura fotos locais
           applyData(fbData, localWH)
           setSyncStatus('synced')
         } else if (localData && Object.keys(localData).length > 0) {
-          // Primeiro login neste device: migra localStorage pro Firebase
+          // Primeiro login neste device: migra localStorage pro Firestore
           applyData(localData)
           setSyncStatus('syncing')
           saveUserData(authUser.uid, localData).then(ok =>
@@ -759,15 +762,21 @@ export default function Home() {
           // Novo usuário: dados zerados → mostra onboarding
           applyData({ meals: NEW_USER_MEALS, userGoals: NEW_USER_GOALS })
           setSyncStatus('idle')
-          const done = authUser && localStorage.getItem(`onboarding_done_${authUser.uid}`)
+          const done = localStorage.getItem(`onboarding_done_${authUser.uid}`)
           if (!done) setOnboardingStep(1)
         }
         localStorage.setItem('dietUserId', authUser.uid)
-      })
-      .catch(() => {
-        if (localData) applyData(localData)
+      } else if (fbData) {
+        // Atualização em tempo real (outro device salvou)
+        applyData(fbData, localWH)
+        setSyncStatus('synced')
+      } else {
+        // null no snapshot subsequente = erro ou documento deletado
         setSyncStatus('offline')
-      })
+      }
+    })
+
+    return unsub
   }, [authUser, applyData])
 
   // Fecha dropdown ao clicar fora
