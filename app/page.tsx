@@ -7,6 +7,12 @@ import {
   Sun, Moon,
   FileDown, Copy, ArrowLeft,
   Camera, Trash2,
+  Wifi, WifiOff, Cloud, RefreshCw,
+  User as UserIcon, Target, Calculator, Utensils, ArrowLeftRight,
+  TrendingUp, TrendingDown, Minus as MinusIcon,
+  Dumbbell, Lightbulb, ChevronDown, Trophy,
+  AlertTriangle, Plus as PlusIcon, Radio, Upload,
+  Search, Zap, Bot, Flame, Coins, Sparkles,
 } from 'lucide-react'
 import type { User } from 'firebase/auth'
 import {
@@ -188,9 +194,9 @@ function calcDayMacros(
 
 function getFeedback(cals: number, calMeta: number, _calMax: number) {
   const diff = cals - calMeta
-  if (Math.abs(diff) <= 50) return { msg: 'No alvo! 🎯 Você atingiu sua meta!',                                       color: 'var(--success)', badge: '🟢' }
-  if (diff < 0)             return { msg: `Você comeu pouco! Margem: +${Math.abs(diff)} kcal pra próximos dias ✅`,   color: 'var(--warning)', badge: '🟡' }
-  return                           { msg: `Passou da meta em ${diff} kcal. Pode compensar amanhã 💪`,                 color: 'var(--warning)', badge: '🔴' }
+  if (Math.abs(diff) <= 50) return { msg: 'No alvo! Você atingiu sua meta!',                                    color: 'var(--success)', badge: '●' }
+  if (diff < 0)             return { msg: `Você comeu pouco! Margem: +${Math.abs(diff)} kcal pra próximos dias`, color: 'var(--warning)', badge: '●' }
+  return                           { msg: `Passou da meta em ${diff} kcal. Pode compensar amanhã`,               color: 'var(--warning)', badge: '●' }
 }
 
 function macroDesc(item: { kcal: number; p: number; c: number; f: number }) {
@@ -301,23 +307,23 @@ function buildReport(
 
   const insights: string[] = []
   const pct = Math.round((finalizados / n) * 100)
-  if      (pct >= 80) insights.push(`${pct}% de adesão — excelente! 🎯`)
-  else if (pct >= 50) insights.push(`${pct}% de adesão — bom progresso, pode melhorar 👍`)
-  else if (n   >   1) insights.push(`${pct}% de adesão — foco nos próximos dias 💪`)
+  if      (pct >= 80) insights.push(`${pct}% de adesão — excelente!`)
+  else if (pct >= 50) insights.push(`${pct}% de adesão — bom progresso, pode melhorar`)
+  else if (n   >   1) insights.push(`${pct}% de adesão — foco nos próximos dias`)
 
   const margin = avgCals - goals.cals
-  if (Math.abs(margin) <= 150)  insights.push(`Média calórica: ${avgCals} kcal/dia (${margin >= 0 ? '+' : ''}${margin} da meta) ✅`)
-  else if (margin < 0)          insights.push(`Média calórica baixa: ${avgCals} kcal/dia — tente consumir mais ⚠️`)
+  if (Math.abs(margin) <= 150)  insights.push(`Média calórica: ${avgCals} kcal/dia (${margin >= 0 ? '+' : ''}${margin} da meta)`)
+  else if (margin < 0)          insights.push(`Média calórica baixa: ${avgCals} kcal/dia — tente consumir mais`)
   else                          insights.push(`Média calórica alta: ${avgCals} kcal/dia (+${margin} kcal acima da meta)`)
 
   if (weightDiff !== null) {
-    if      (weightDiff < 0) insights.push(`Perdeu ${Math.abs(weightDiff)}kg no período 🏆`)
-    else if (weightDiff > 0) insights.push(`Ganhou ${weightDiff}kg no período 📈`)
-    else                     insights.push(`Peso estável no período ➡️`)
+    if      (weightDiff < 0) insights.push(`Perdeu ${Math.abs(weightDiff)}kg no período`)
+    else if (weightDiff > 0) insights.push(`Ganhou ${weightDiff}kg no período`)
+    else                     insights.push(`Peso estável no período`)
     if (weeklyTrend !== null && dates.length >= 7)
       insights.push(`Tendência: ${weeklyTrend > 0 ? '+' : ''}${weeklyTrend}kg/semana`)
   }
-  if (avgP >= goals.p) insights.push(`Proteína em dia: ${avgP}g/dia (meta ${goals.p}g) 💪`)
+  if (avgP >= goals.p) insights.push(`Proteína em dia: ${avgP}g/dia (meta ${goals.p}g)`)
   else                 insights.push(`Proteína abaixo: ${avgP}g/dia — faltou ${goals.p - avgP}g/dia`)
 
   const LABELS: Record<ReportPeriod, string> = { daily:'Diário', weekly:'Semanal', monthly:'Mensal', '3m':'3 Meses', '6m':'6 Meses' }
@@ -468,13 +474,13 @@ function parseBioText(text: string): BioData {
 const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
 const BLANK_SUB_FORM  = { name: '', kcal: '', p: '', c: '', f: '', targetId: '' }
 
-const SYNC_ICON: Record<SyncStatus, string> = {
-  unconfigured: '',
-  idle:    '☁️',
-  syncing: '⟳',
-  synced:  '☁️ ✅',
-  offline: '📵',
-  error:   '⚠️',
+function SyncIcon({ status }: { status: SyncStatus }) {
+  if (status === 'synced')  return <Wifi size={14} style={{ color:'var(--success)' }} />
+  if (status === 'idle')    return <Cloud size={14} />
+  if (status === 'syncing') return <RefreshCw size={14} style={{ animation:'spin 1s linear infinite' }} />
+  if (status === 'offline') return <WifiOff size={14} style={{ color:'var(--error)' }} />
+  if (status === 'error')   return <AlertTriangle size={14} style={{ color:'var(--error)' }} />
+  return null
 }
 
 export default function Home() {
@@ -501,7 +507,7 @@ export default function Home() {
   const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
   // ── Theme ────────────────────────────────────────────────────────────────────
-  const [isDark, setIsDark] = useState(true) // dark por padrão
+  const [isDark, setIsDark] = useState(false) // light por padrão
 
   // ── Onboarding ───────────────────────────────────────────────────────────────
   // 0=off  1=modal boas-vindas  2=hint calc  3=hint dieta  4=done toast
@@ -756,10 +762,10 @@ export default function Home() {
     return () => document.removeEventListener('click', fn)
   }, [openAlt])
 
-  // ── Tema: inicializa do localStorage (dark por padrão) ──────────────────────
+  // ── Tema: inicializa do localStorage (light por padrão) ─────────────────────
   useEffect(() => {
     const saved = localStorage.getItem('theme')
-    setIsDark(saved !== 'light')
+    setIsDark(saved === 'dark')
   }, [])
 
   // ── Tema: aplica classe 'dark' no <html> ────────────────────────────────────
@@ -1539,7 +1545,7 @@ export default function Home() {
   if (authLoading) {
     return (
       <div className="auth-loading">
-        <div className="auth-loading-logo">💪</div>
+        <div className="auth-loading-logo"><Dumbbell size={40} style={{ color:'var(--primary)' }}/></div>
         <div className="auth-loading-text">Carregando...</div>
       </div>
     )
@@ -1556,13 +1562,13 @@ export default function Home() {
     const targetOnb    = parseInt(dietTarget) || 1
     const diffOnb      = totalKcalOnb - targetOnb
     const diffColorOnb = Math.abs(diffOnb) <= 100 ? 'var(--success)' : diffOnb > 0 ? 'var(--error)' : 'var(--warning)'
-    const diffTextOnb  = Math.abs(diffOnb) <= 100 ? '✅ No alvo' : diffOnb > 0 ? `+${diffOnb} kcal acima` : `${Math.abs(diffOnb)} kcal abaixo`
+    const diffTextOnb  = Math.abs(diffOnb) <= 100 ? 'No alvo' : diffOnb > 0 ? `+${diffOnb} kcal acima` : `${Math.abs(diffOnb)} kcal abaixo`
 
     return (
       <div className="onb-screen">
         {/* Header */}
         <div className="onb-header">
-          <div className="onb-logo">💪 Meu Plano</div>
+          <div className="onb-logo"><Dumbbell size={20}/> Meu Plano</div>
           <div className="onb-progress-row">
             <div className={`onb-step-dot ${onboardingScreenStep >= 1 ? 'active' : ''} ${onboardingScreenStep > 1 ? 'done' : ''}`}>
               {onboardingScreenStep > 1 ? '✓' : '1'}
@@ -1572,8 +1578,8 @@ export default function Home() {
           </div>
           <div className="onb-step-subtitle">
             {onboardingScreenStep === 1
-              ? '🧮 Passo 1 — Calcule sua meta calórica'
-              : '🍽️ Passo 2 — Gere sua dieta personalizada'}
+              ? 'Passo 1 — Calcule sua meta calórica'
+              : 'Passo 2 — Gere sua dieta personalizada'}
           </div>
         </div>
 
@@ -1586,12 +1592,12 @@ export default function Home() {
               {/* Bioimpedância */}
               <div className="bio-section">
                 <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
-                  📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
+                  <Radio size={14}/> Importar Bioimpedância <span className="bio-optional">(opcional)</span> <ChevronDown size={12} style={{ transform: showBio ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
                 </button>
                 {showBio && (
                   <div className="bio-content">
                     <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
-                      <div className="bio-upload-icon">📊</div>
+                      <div className="bio-upload-icon"><Upload size={28} style={{ color:'var(--primary)' }}/></div>
                       <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
                       <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
                     </div>
@@ -1602,7 +1608,7 @@ export default function Home() {
                       <input type="number" className="login-input" value={calcGordura} placeholder="Ex: 22.5"
                         onChange={e => setCalcGordura(e.target.value)} />
                     </div>
-                    {calcGordura && <div className="bio-formula-note">✅ Usando Katch-McArdle (mais preciso com % gordura)</div>}
+                    {calcGordura && <div className="bio-formula-note"><CheckCircle2 size={13}/> Usando Katch-McArdle (mais preciso com % gordura)</div>}
                   </div>
                 )}
               </div>
@@ -1640,9 +1646,9 @@ export default function Home() {
                 <label className="calc-label">Objetivo Principal</label>
                 <div className="calc-obj-row">
                   {([
-                    { v:'emagrecer', label:'📉 Emagrecer' },
-                    { v:'manter',    label:'➡️ Manter'    },
-                    { v:'ganhar',    label:'📈 Ganhar'     },
+                    { v:'emagrecer', label:'Emagrecer' },
+                    { v:'manter',    label:'Manter'    },
+                    { v:'ganhar',    label:'Ganhar'    },
                   ] as const).map(({ v, label }) => (
                     <button key={v} className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
                       onClick={() => setCalcObjetivo(v)}>{label}</button>
@@ -1651,7 +1657,7 @@ export default function Home() {
               </div>
               <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
                 disabled={!calcPeso || !calcAltura || !calcIdade}>
-                🧮 Calcular
+                <Calculator size={15}/> Calcular
               </button>
               {calcResult && (
                 <div className="calc-result-box">
@@ -1669,9 +1675,9 @@ export default function Home() {
                   {/* Cards de objetivo — selecionáveis */}
                   <div className="calc-options-grid">
                     {([
-                      { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
-                      { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
-                      { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
+                      { obj:'emagrecer', label:'EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
+                      { obj:'manter',    label:'MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
+                      { obj:'ganhar',    label:'GANHAR',    val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
                     ] as const).map(({ obj, label, val, desc }) => (
                       <div key={obj}
                         className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}
@@ -1686,12 +1692,12 @@ export default function Home() {
                   {(calcObjetivo === 'emagrecer' || calcObjetivo === 'ganhar') && (
                     <div className="deficit-section">
                       <div className="deficit-title">
-                        {calcObjetivo === 'emagrecer' ? '📌 Escolha o déficit:' : '📌 Escolha o superávit:'}
+                        {calcObjetivo === 'emagrecer' ? 'Escolha o déficit:' : 'Escolha o superávit:'}
                       </div>
                       <div className="deficit-row">
                         {([
                           { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
-                          { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
+                          { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado' },
                           { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
                         ] as const).map(({ id, label, pct, desc }) => {
                           const cals = calcObjetivo === 'emagrecer'
@@ -1729,7 +1735,7 @@ export default function Home() {
                         useDietCals(cals, calcObjetivo)
                       }
                     }}>
-                    🧮 Usar →
+                    <Calculator size={14}/> Usar
                   </button>
                 </div>
               )}
@@ -1750,13 +1756,13 @@ export default function Home() {
               <div className="calc-field" style={{ marginTop:12 }}>
                 <label className="calc-label">Preferência de alimentos</label>
                 <div className="calc-obj-row">
-                  <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}>✨ Melhor qualidade</button>
-                  <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}>💰 Simples / Barato</button>
+                  <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}><Sparkles size={14}/> Melhor qualidade</button>
+                  <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}><Coins size={14}/> Simples / Barato</button>
                 </div>
               </div>
               <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
                 disabled={!dietTarget || parseInt(dietTarget) < 500}>
-                🚀 Gerar Dieta Automaticamente
+                <Zap size={15}/> Gerar Dieta Automaticamente
               </button>
 
               {generatedDiet && (
@@ -1773,11 +1779,11 @@ export default function Home() {
                     </div>
                     {Math.abs(diffOnb) > 150 && (
                       <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
-                        🔄 Reajustar para meta
+                        <RefreshCw size={13}/> Reajustar para meta
                       </button>
                     )}
                     <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
-                      💾 Salvar e começar!
+                      <CheckCircle2 size={15}/> Salvar e começar!
                     </button>
                   </div>
 
@@ -1799,10 +1805,10 @@ export default function Home() {
                             </div>
                             <div className="diet-gen-item-detail">
                               {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
-                              {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                              {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                             </div>
                           </div>
-                          <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
+                          <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}><ArrowLeftRight size={13}/></button>
                         </div>
                       ))}
                     </div>
@@ -1836,7 +1842,7 @@ export default function Home() {
           return (
             <div className="modal-overlay" onClick={() => setDietSubModal(null)}>
               <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-                <div className="modal-title">🔄 Substituir Alimento na Dieta</div>
+                <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><ArrowLeftRight size={16}/> Substituir Alimento na Dieta</div>
                 <div className="diet-sub-original">
                   <strong>{item.food.nome}</strong> · {item.grams}g · {item.kcal} kcal
                   <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
@@ -1855,7 +1861,7 @@ export default function Home() {
                           <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
                             <div className="taco-result-name">
                               {sub.nome} · {g}g
-                              {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
+                              {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                             </div>
                             <div className="taco-result-cat">
                               {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
@@ -1867,13 +1873,13 @@ export default function Home() {
                   </>
                 )}
                 <div className="sub-search-section">
-                  <div className="sub-section-label">🔍 Buscar qualquer alimento</div>
+                  <div className="sub-section-label"><Search size={13}/> Buscar qualquer alimento</div>
                   <input type="text" className="login-input"
                     placeholder="Ex: batata doce, atum, tofu, peixe..."
                     value={dietSubSearchQuery} autoComplete="off"
                     onChange={e => handleDietSubSearch(e.target.value)} />
                   {dietSubSearching && (
-                    <div className="sub-search-loading"><span>🤖 Consultando IA...</span></div>
+                    <div className="sub-search-loading"><span><Bot size={13}/> Consultando IA...</span></div>
                   )}
                   {dietSubSearchRes.length > 0 && (
                     <div className="taco-results" style={{ marginTop:6 }}>
@@ -1934,7 +1940,7 @@ export default function Home() {
         return (
           <div className="modal-overlay" onClick={closeTodaySubModal}>
             <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-              <div className="modal-title">🔄 Substituir Alimento</div>
+              <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><ArrowLeftRight size={16}/> Substituir Alimento</div>
               <div className="diet-sub-original">
                 <strong>{display.name}</strong>
                 {activeSubs[todaySubItem.id] && <span style={{ color:'var(--text-secondary)', fontSize:12 }}> (sub ativa)</span>}
@@ -1981,7 +1987,7 @@ export default function Home() {
                         <div className="taco-result-name">
                           {formatTacoItemName(alt.food, alt.grams)}
                           {renderKcalDiff(alt.kcal)}
-                          {BUDGET_IDS.has(alt.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                          {BUDGET_IDS.has(alt.food.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                         </div>
                         <div className="taco-result-cat">{alt.kcal} kcal · P{alt.p}g · C{alt.c}g · G{alt.f}g</div>
                       </button>
@@ -1992,7 +1998,7 @@ export default function Home() {
 
               {/* ── Campo de Busca ── */}
               <div className="sub-search-section">
-                <div className="sub-section-label">🔍 Buscar outro alimento</div>
+                <div className="sub-section-label"><Search size={13}/> Buscar outro alimento</div>
                 <input
                   type="text"
                   className="login-input"
@@ -2004,7 +2010,7 @@ export default function Home() {
 
                 {todaySubSearching && (
                   <div className="sub-search-loading">
-                    <span>🤖 Consultando IA...</span>
+                    <span><Bot size={13}/> Consultando IA...</span>
                   </div>
                 )}
 
@@ -2017,7 +2023,7 @@ export default function Home() {
                           {formatTacoItemName(res.food, res.grams)}
                           {renderKcalDiff(res.kcal)}
                           {res.isAI && <span className="diet-ia-badge"> IA</span>}
-                          {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                          {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                         </div>
                         <div className="taco-result-cat">
                           {res.kcal} kcal · P{res.p}g · C{res.c}g · G{res.f}g
@@ -2050,7 +2056,7 @@ export default function Home() {
         return (
           <div className="modal-overlay" onClick={() => setDietSubModal(null)}>
             <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-              <div className="modal-title">🔄 Substituir Alimento na Dieta</div>
+              <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><ArrowLeftRight size={16}/> Substituir Alimento na Dieta</div>
               <div className="diet-sub-original">
                 <strong>{item.food.nome}</strong> · {item.grams}g · {item.kcal} kcal
                 <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
@@ -2071,7 +2077,7 @@ export default function Home() {
                         <button key={sub.id} className="taco-result-item" onClick={() => applyDietSub(sub)}>
                           <div className="taco-result-name">
                             {sub.nome} · {g}g
-                            {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"> 💰</span>}
+                            {BUDGET_IDS.has(sub.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                           </div>
                           <div className="taco-result-cat">
                             {Math.round(sub.kcal * mult)} kcal · P{+(sub.p * mult).toFixed(1)}g · C{+(sub.c * mult).toFixed(1)}g · G{+(sub.f * mult).toFixed(1)}g
@@ -2085,7 +2091,7 @@ export default function Home() {
 
               {/* Campo de busca livre no TACO */}
               <div className="sub-search-section">
-                <div className="sub-section-label">🔍 Buscar qualquer alimento</div>
+                <div className="sub-section-label"><Search size={13}/> Buscar qualquer alimento</div>
                 <input
                   type="text"
                   className="login-input"
@@ -2095,7 +2101,7 @@ export default function Home() {
                   onChange={e => handleDietSubSearch(e.target.value)}
                 />
                 {dietSubSearching && (
-                  <div className="sub-search-loading"><span>🤖 Consultando IA...</span></div>
+                  <div className="sub-search-loading"><span><Bot size={13}/> Consultando IA...</span></div>
                 )}
                 {dietSubSearchRes.length > 0 && (
                   <div className="taco-results" style={{ marginTop:6 }}>
@@ -2109,7 +2115,7 @@ export default function Home() {
                           <div className="taco-result-name">
                             {res.food.nome} · {g}g
                             {res.isAI && <span className="diet-ia-badge"> IA</span>}
-                            {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                            {BUDGET_IDS.has(res.food.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                           </div>
                           <div className="taco-result-cat">
                             {Math.round(res.food.kcal * mult)} kcal · P{+(res.food.p * mult).toFixed(1)}g · C{+(res.food.c * mult).toFixed(1)}g · G{+(res.food.f * mult).toFixed(1)}g
@@ -2139,7 +2145,7 @@ export default function Home() {
       {showTACO && (
         <div className="modal-overlay" onClick={() => setShowTACO(false)}>
           <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">🥗 Banco TACO — Buscar Alimento</div>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><Search size={16}/> Banco TACO — Buscar Alimento</div>
 
             <div style={{ marginBottom: 12 }}>
               <label className="config-goal-label" style={{ marginBottom: 6 }}>Adicionar em:</label>
@@ -2203,7 +2209,7 @@ export default function Home() {
                   const m = g / 100
                   return (
                     <div className="taco-calc-macros">
-                      <span>🔥 {Math.round(tacoSelected.kcal * m)} kcal</span>
+                      <span><Flame size={13}/> {Math.round(tacoSelected.kcal * m)} kcal</span>
                       <span>P {+(tacoSelected.p * m).toFixed(1)}g</span>
                       <span>C {+(tacoSelected.c * m).toFixed(1)}g</span>
                       <span>G {+(tacoSelected.f * m).toFixed(1)}g</span>
@@ -2216,7 +2222,7 @@ export default function Home() {
                   disabled={!tacoPorcao || parseFloat(tacoPorcao) <= 0}
                   onClick={addTACOItem}
                 >
-                  ✅ Adicionar a {meals[tacoMealIdx]?.title}
+                  <CheckCircle2 size={14}/> Adicionar a {meals[tacoMealIdx]?.title}
                 </button>
                 <button
                   className="btn btn-cancel"
@@ -2239,14 +2245,14 @@ export default function Home() {
       {showWeightHistory && (
         <div className="modal-overlay" onClick={() => setShowWeightHistory(false)}>
           <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">📊 Histórico de Peso</div>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><Scale size={16}/> Histórico de Peso</div>
 
             <div className="wh-stats-grid">
               {[
                 { label: 'Peso inicial', val: firstW !== null ? `${firstW}kg` : '—' },
                 { label: 'Peso atual',   val: lastW  !== null ? `${lastW}kg`  : '—' },
                 { label: 'Perda total',  val: totalLoss !== null
-                    ? `${totalLoss > 0 ? '-' : totalLoss < 0 ? '+' : ''}${Math.abs(totalLoss)}kg ${totalLoss > 0 ? '✅' : totalLoss < 0 ? '⚠️' : '='}`
+                    ? `${totalLoss > 0 ? '-' : totalLoss < 0 ? '+' : ''}${Math.abs(totalLoss)}kg`
                     : '—' },
                 { label: 'Dias reg.',    val: String(weightHistoryAsc.length) },
                 { label: 'Média/semana', val: weeklyAvg !== null
@@ -2300,7 +2306,7 @@ export default function Home() {
                           <td>{e.foto ? <img src={e.foto} alt="" className="wh-thumb" /> : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>—</span>}</td>
                           <td style={{ fontWeight: 500, fontSize: 13,
                             color: diff === null ? 'var(--text-secondary)' : diff < 0 ? 'var(--success)' : diff > 0 ? 'var(--warning)' : 'var(--text-secondary)' }}>
-                            {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}kg ${diff < 0 ? '✅' : diff > 0 ? '📈' : ''}`}
+                            {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}kg`}
                           </td>
                         </tr>
                       )
@@ -2440,7 +2446,7 @@ export default function Home() {
         >
           {reportStep === 'select' ? (
             <div className="modal-card" onClick={e => e.stopPropagation()}>
-              <div className="modal-title">📄 Gerar Relatório</div>
+              <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><BarChart3 size={16}/> Gerar Relatório</div>
 
               <label className="modal-label">Período</label>
               <select className="modal-input" value={reportPeriod}
@@ -2466,7 +2472,7 @@ export default function Home() {
                 const fmt = (d: string) => new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' })
                 return (
                   <div className="report-range-preview">
-                    📅 {fmt(ds[0])} → {fmt(ds[ds.length - 1])} ({ds.length} dias)
+                    {fmt(ds[0])} → {fmt(ds[ds.length - 1])} ({ds.length} dias)
                   </div>
                 )
               })()}
@@ -2507,7 +2513,7 @@ export default function Home() {
 
                 {/* Seção 1: Resumo */}
                 <div className="report-section">
-                  <div className="report-section-title">📊 Resumo Geral</div>
+                  <div className="report-section-title"><BarChart3 size={14}/> Resumo Geral</div>
                   <div className="report-grid">
                     <div className="report-stat">
                       <div className="report-stat-val">{reportResult.finalizados}/{reportResult.dates.length}</div>
@@ -2538,7 +2544,7 @@ export default function Home() {
 
                 {/* Seção 2: Macros */}
                 <div className="report-section">
-                  <div className="report-section-title">🥗 Macros (média/dia)</div>
+                  <div className="report-section-title"><Utensils size={14}/> Macros (média/dia)</div>
                   <div className="report-grid">
                     {([
                       { label:'Proteína',    val: reportResult.avgP, meta: userGoals.p },
@@ -2558,7 +2564,7 @@ export default function Home() {
 
                 {/* Seção 3: Gráfico calorias */}
                 <div className="report-section">
-                  <div className="report-section-title">📈 Calorias no Período</div>
+                  <div className="report-section-title"><TrendingUp size={14}/> Calorias no Período</div>
                   <ResponsiveContainer width="100%" height={180}>
                     <LineChart data={reportResult.calChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2574,7 +2580,7 @@ export default function Home() {
                 {/* Seção 3b: Gráfico peso */}
                 {reportResult.pesoChart.length >= 2 && (
                   <div className="report-section">
-                    <div className="report-section-title">⚖️ Peso no Período</div>
+                    <div className="report-section-title"><Scale size={14}/> Peso no Período</div>
                     <ResponsiveContainer width="100%" height={160}>
                       <LineChart data={reportResult.pesoChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2589,7 +2595,7 @@ export default function Home() {
 
                 {/* Seção 4: Gráfico macros */}
                 <div className="report-section">
-                  <div className="report-section-title">🏋️ Macros Médios vs Meta</div>
+                  <div className="report-section-title"><Dumbbell size={14}/> Macros Médios vs Meta</div>
                   <ResponsiveContainer width="100%" height={140}>
                     <BarChart data={reportResult.macroChart} margin={{ top:8, right:8, left:-20, bottom:0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2605,7 +2611,7 @@ export default function Home() {
 
                 {/* Seção 5: Insights */}
                 <div className="report-section">
-                  <div className="report-section-title">💡 Insights Automáticos</div>
+                  <div className="report-section-title"><Lightbulb size={14}/> Insights Automáticos</div>
                   {reportResult.insights.map((ins, i) => (
                     <div key={i} className="report-insight">• {ins}</div>
                   ))}
@@ -2638,16 +2644,16 @@ export default function Home() {
       {onboardingStep === 1 && (
         <div className="modal-overlay" style={{ zIndex: 300 }}>
           <div className="modal-card" style={{ textAlign: 'center', maxWidth: 360 }}>
-            <div style={{ fontSize: 52, marginBottom: 12 }}>👋</div>
+            <div style={{ marginBottom: 12 }}><Sparkles size={48} style={{ color:'var(--primary)' }}/></div>
             <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 8 }}>
               Bem-vindo ao Meu Plano!
             </div>
             <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.7 }}>
               Vamos configurar sua dieta em <strong style={{ color: 'var(--primary)' }}>3 passos</strong>:<br />
-              <span style={{ display: 'inline-block', marginTop: 8 }}>
-                🧮 Calcule sua meta calórica<br />
-                🍽️ Gere sua dieta personalizada<br />
-                📋 Comece a acompanhar!
+              <span style={{ display: 'inline-block', marginTop: 8, textAlign:'left' }}>
+                <Calculator size={13}/> Calcule sua meta calórica<br />
+                <Utensils size={13}/> Gere sua dieta personalizada<br />
+                <ClipboardList size={13}/> Comece a acompanhar!
               </span>
             </div>
             <button className="btn" style={{ width: '100%' }}
@@ -2656,7 +2662,7 @@ export default function Home() {
                 setOnboardingScreen(true)
                 setOnboardingScreenStep(1)
               }}>
-              🧮 Calcular meta e gerar dieta
+              <Calculator size={15}/> Calcular meta e gerar dieta
             </button>
             <button className="btn btn-cancel" style={{ marginTop: 10, width: '100%' }}
               onClick={() => {
@@ -2666,7 +2672,7 @@ export default function Home() {
                 setActiveTab('config')
                 setConfigSections(prev => ({ ...prev, cardapio: true }))
               }}>
-              ✍️ Montar minha própria dieta
+              Montar minha própria dieta
             </button>
           </div>
         </div>
@@ -2683,7 +2689,7 @@ export default function Home() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {firebaseConfigured && syncStatus !== 'unconfigured' && (
                 <div className={`sync-badge sync-badge--${syncStatus}`}>
-                  {SYNC_ICON[syncStatus]}
+                  <SyncIcon status={syncStatus} />
                 </div>
               )}
               <button
@@ -2701,7 +2707,7 @@ export default function Home() {
       {/* Banner de progresso de setup (caminho automático, steps 2-3) */}
       {inAutoSetup && (
         <div className="setup-progress-banner">
-          <span>🔧 Configure seu plano primeiro —</span>
+          <span style={{ display:'flex', alignItems:'center', gap:4 }}><Settings size={13}/> Configure seu plano primeiro —</span>
           <span className="setup-progress-steps">
             Passo {onboardingStep === 2 ? '1' : '2'}/2: {onboardingStep === 2 ? 'Calculadora' : 'Gerar Dieta'}
           </span>
@@ -2732,7 +2738,7 @@ export default function Home() {
           {/* Onboarding: toast de conclusão */}
           {onboardingStep === 4 && (
             <div className="onboarding-done-banner">
-              🎉 Tudo pronto! Seu cardápio está configurado. Comece a marcar as refeições!
+              <CheckCircle2 size={15}/> Tudo pronto! Seu cardápio está configurado. Comece a marcar as refeições!
             </div>
           )}
 
@@ -2844,7 +2850,7 @@ export default function Home() {
                   <div className="meal-collapse-kcal">
                     {mealKcal > 0 ? `${Math.round(mealKcal)}` : `~${Math.round(mealKcalTotal)}`} kcal
                   </div>
-                  <div className={`meal-collapse-arrow ${isExpanded ? 'meal-collapse-arrow--open' : ''}`}>▼</div>
+                  <ChevronDown size={14} className={`meal-collapse-arrow ${isExpanded ? 'meal-collapse-arrow--open' : ''}`} />
                 </div>
                 {isExpanded && (
                   <div className="meal-collapse-body">
@@ -2873,15 +2879,15 @@ export default function Home() {
                           </div>
                           <div className="alt-wrap" onClick={e => e.stopPropagation()}>
                             <button className="alt-btn" title="Substituir alimento"
-                              onClick={() => setTodaySubItem(item)}>🔄</button>
+                              onClick={() => setTodaySubItem(item)}><ArrowLeftRight size={13}/></button>
                             {displayQty !== undefined && (
                               <>
                                 <button className="qty-btn" title="Diminuir quantidade"
                                   disabled={displayQty <= 1}
-                                  onClick={() => adjustQuantity(meal.id, item.id, 'decrease', displayQty)}>➖</button>
+                                  onClick={() => adjustQuantity(meal.id, item.id, 'decrease', displayQty)}><MinusIcon size={12}/></button>
                                 <button className="qty-btn" title="Aumentar quantidade"
                                   disabled={displayQty >= 99}
-                                  onClick={() => adjustQuantity(meal.id, item.id, 'increase', displayQty)}>➕</button>
+                                  onClick={() => adjustQuantity(meal.id, item.id, 'increase', displayQty)}><PlusIcon size={12}/></button>
                               </>
                             )}
                           </div>
@@ -2980,7 +2986,7 @@ export default function Home() {
                       onClick={() => setShowWeightHistory(true)}>
                       Ver histórico completo
                     </button>
-                    <button className="btn btn-small btn-danger-outline" style={{ width: 'auto' }}
+                    <button className="btn-ghost-danger"
                       onClick={() => setShowDeleteWeightConfirm(true)}>
                       <Trash2 size={13}/> Apagar histórico
                     </button>
@@ -3039,7 +3045,7 @@ export default function Home() {
           {(weightHistoryAsc.length >= 1 || dualChartData.some(d => d.cals !== undefined)) && (
             <div className="card" style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div className="card-title" style={{ marginBottom: 0 }}>📈 Seu Progresso</div>
+                <div className="card-title" style={{ marginBottom: 0, display:'flex', alignItems:'center', gap:6 }}><TrendingUp size={15}/> Seu Progresso</div>
                 {weightHistoryAsc.length > 0 && (
                   <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => setShowWeightHistory(true)}>
                     Ver Histórico
@@ -3072,13 +3078,13 @@ export default function Home() {
               )}
               <div>
                 {totalLoss !== null && totalLoss > 0 && (
-                  <div className="insight-item">🏆 Você perdeu <strong>{totalLoss}kg</strong> desde o início ({weightHistoryAsc.length} registros)</div>
+                  <div className="insight-item"><Trophy size={13}/> Você perdeu <strong>{totalLoss}kg</strong> desde o início ({weightHistoryAsc.length} registros)</div>
                 )}
                 {totalLoss !== null && totalLoss < 0 && (
-                  <div className="insight-item">📈 Ganhou <strong>{Math.abs(totalLoss)}kg</strong> desde o início — ajuste a dieta se necessário</div>
+                  <div className="insight-item"><TrendingUp size={13}/> Ganhou <strong>{Math.abs(totalLoss)}kg</strong> desde o início — ajuste a dieta se necessário</div>
                 )}
                 {weeklyAvg !== null && weeklyAvg > 0 && (
-                  <div className="insight-item">📊 Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong>{weeklyAvg >= 0.3 && weeklyAvg <= 1 ? ' ✅ bom ritmo!' : weeklyAvg > 1 ? ' ⚠️ ritmo muito alto' : ''}</div>
+                  <div className="insight-item"><TrendingDown size={13}/> Tendência: perdendo <strong>{weeklyAvg}kg/semana</strong>{weeklyAvg >= 0.3 && weeklyAvg <= 1 ? ' — bom ritmo!' : weeklyAvg > 1 ? ' — ritmo muito alto' : ''}</div>
                 )}
                 {(() => {
                   const lastEntry = weightHistoryAsc[weightHistoryAsc.length - 1]
@@ -3086,9 +3092,11 @@ export default function Home() {
                   const diff = CAL_META - lastEntry.calorias
                   return (
                     <div className="insight-item">
-                      {diff > 100 ? `🟡 Calorias: margem de -${diff} kcal/dia — pode comer mais`
-                        : diff < -100 ? `🔴 Calorias: ${Math.abs(diff)} kcal acima da meta no último registro`
-                        : `🟢 Calorias dentro da meta no último registro`}
+                      {diff > 100
+                        ? <><AlertTriangle size={13} style={{ color:'var(--warning)' }}/> Calorias: margem de -{diff} kcal/dia — pode comer mais</>
+                        : diff < -100
+                          ? <><AlertTriangle size={13} style={{ color:'var(--error)' }}/> Calorias: {Math.abs(diff)} kcal acima da meta no último registro</>
+                          : <><CheckCircle2 size={13} style={{ color:'var(--success)' }}/> Calorias dentro da meta no último registro</>}
                     </div>
                   )
                 })()}
@@ -3099,11 +3107,11 @@ export default function Home() {
           <div className="report-btn-row">
             <button className="btn btn-small btn-pdf" style={{ width:'auto' }}
               onClick={() => window.print()}>
-              📥 PDF
+              <FileDown size={14}/> PDF
             </button>
             <button className="btn btn-small btn-report" style={{ width:'auto' }}
               onClick={() => { setShowReport(true); setReportStep('select'); setReportResult(null) }}>
-              📄 Gerar Relatório
+              <BarChart3 size={14}/> Gerar Relatório
             </button>
           </div>
 
@@ -3167,7 +3175,7 @@ export default function Home() {
             <div>
               {weekWeightDiff !== null && weekFirstW !== null && weekLastW !== null && (
                 <div className="weight-badge-card">
-                  <span style={{ fontSize: 18 }}>{weekWeightDiff < 0 ? '📉' : weekWeightDiff > 0 ? '📈' : '➡️'}</span>
+                  <span>{weekWeightDiff < 0 ? <TrendingDown size={20} style={{ color:'var(--success)' }}/> : weekWeightDiff > 0 ? <TrendingUp size={20} style={{ color:'var(--warning)' }}/> : <MinusIcon size={20} style={{ color:'var(--text-secondary)' }}/>}</span>
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>
                       Peso: {weekFirstW}kg → {weekLastW}kg
@@ -3218,7 +3226,7 @@ export default function Home() {
                       const cals = calcDayMacros(meals, checked[d]||{}, activeSubs).cals + (dayStats[d]?.caloriasExtras||0)
                       const fin  = dayStats[d]?.finalizado
                       const diff = CAL_META - cals
-                      const status = fin ? `✅ ${Math.abs(diff)} ${diff>=0?'abaixo':'acima'}` : cals > CAL_MAX ? '⚠️ Acima' : cals > 0 ? '⏳ Parcial' : '—'
+                      const status = fin ? `${Math.abs(diff)} ${diff>=0?'abaixo':'acima'}` : cals > CAL_MAX ? 'Acima' : cals > 0 ? 'Parcial' : '—'
                       return (
                         <tr key={d} style={{ background: i%2===0 ? 'var(--dark)' : 'transparent' }}>
                           <td>{dateLabel(d)}</td>
@@ -3277,7 +3285,7 @@ export default function Home() {
                   const tot = monthlyChartData.reduce((s,w) => s+w.total, 0)
                   const met = CAL_META * 30
                   const fin = monthDates.filter(d => dayStats[d]?.finalizado).length
-                  return [['Total',`${tot.toLocaleString()} kcal`],['Meta',`${met.toLocaleString()} kcal`],['Status',tot<=met?'No alvo ✅':`${(tot-met).toLocaleString()} kcal acima`],['Finalizados',`${fin}/30`]].map(([k,v])=>(
+                  return [['Total',`${tot.toLocaleString()} kcal`],['Meta',`${met.toLocaleString()} kcal`],['Status',tot<=met?'No alvo':`${(tot-met).toLocaleString()} kcal acima`],['Finalizados',`${fin}/30`]].map(([k,v])=>(
                     <div key={k} className="summary-row"><span className="summary-key">{k}</span><span className="summary-val">{v}</span></div>
                   ))
                 })()}
@@ -3294,21 +3302,22 @@ export default function Home() {
             <div className="config-section">
               <div className="config-section-header" onClick={() => toggleConfigSection('conta')}>
                 <div className="config-section-title-group">
-                  <span>👤 Minha Conta</span>
+                  <span className="config-section-label"><UserIcon size={15}/> Minha Conta</span>
                   <span className="config-section-desc">Gerencie login e sincronização</span>
                 </div>
-                <span className={`config-section-arrow ${configSections.conta ? 'open' : ''}`}>▼</span>
+                <ChevronDown size={15} className={`config-section-arrow ${configSections.conta ? 'open' : ''}`} />
               </div>
               {configSections.conta && (
                 <div className="config-section-body">
                   <div className="account-row" style={{ marginTop: 8 }}>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser.email}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-                        {syncStatus === 'synced'  && '☁️ Sincronizado'}
-                        {syncStatus === 'syncing' && '⟳ Sincronizando...'}
-                        {syncStatus === 'offline' && '📵 Offline — dados salvos localmente'}
-                        {syncStatus === 'idle'    && '☁️ Conectado'}
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display:'flex', alignItems:'center', gap:4 }}>
+                        <SyncIcon status={syncStatus} />
+                        {syncStatus === 'synced'  && 'Sincronizado'}
+                        {syncStatus === 'syncing' && 'Sincronizando...'}
+                        {syncStatus === 'offline' && 'Offline — dados salvos localmente'}
+                        {syncStatus === 'idle'    && 'Conectado'}
                       </div>
                     </div>
                     <button className="btn btn-small warning" style={{ width: 'auto' }} onClick={handleLogout}>
@@ -3324,16 +3333,16 @@ export default function Home() {
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('metas')}>
               <div className="config-section-title-group">
-                <span>🎯 Minha Meta</span>
+                <span className="config-section-label"><Target size={15}/> Minha Meta</span>
                 <span className="config-section-desc">Defina seu objetivo calórico</span>
               </div>
-              <span className={`config-section-arrow ${configSections.metas ? 'open' : ''}`}>▼</span>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.metas ? 'open' : ''}`} />
             </div>
             {configSections.metas && (
               <div className="config-section-body">
                 {suggestRegen && (
                   <div className="regen-suggestion">
-                    <div>🍽️ Sua meta calórica mudou para <strong>{userGoals.cals} kcal/dia</strong>. Deseja gerar um novo cardápio automaticamente?</div>
+                    <div><Utensils size={14}/> Sua meta calórica mudou para <strong>{userGoals.cals} kcal/dia</strong>. Deseja gerar um novo cardápio automaticamente?</div>
                     <div className="regen-actions">
                       <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => {
                         setDietTarget(String(userGoals.cals))
@@ -3369,10 +3378,10 @@ export default function Home() {
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('calc')}>
               <div className="config-section-title-group">
-                <span>🧮 Calcular</span>
+                <span className="config-section-label"><Calculator size={15}/> Calcular</span>
                 <span className="config-section-desc">Recalcule seus dados nutricionais</span>
               </div>
-              <span className={`config-section-arrow ${configSections.calc ? 'open' : ''}`}>▼</span>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.calc ? 'open' : ''}`} />
             </div>
             {configSections.calc && (
               <div className="config-section-body">
@@ -3388,12 +3397,12 @@ export default function Home() {
                 {/* Bioimpedância */}
                 <div className="bio-section" style={{ marginTop:8 }}>
                   <button className="bio-toggle" onClick={() => setShowBio(!showBio)}>
-                    📡 {showBio ? '▾' : '▸'} Importar Bioimpedância <span className="bio-optional">(opcional)</span>
+                    <Radio size={14}/> Importar Bioimpedância <span className="bio-optional">(opcional)</span> <ChevronDown size={12} style={{ transform: showBio ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
                   </button>
                   {showBio && (
                     <div className="bio-content">
                       <div className="bio-upload-zone" onClick={() => bioFileRef.current?.click()}>
-                        <div className="bio-upload-icon">📊</div>
+                        <div className="bio-upload-icon"><Upload size={28} style={{ color:'var(--primary)' }}/></div>
                         <div className="bio-upload-text">Clique para selecionar arquivo da balança</div>
                         <div className="bio-upload-sub">TXT, CSV — exportado da balança ou app de bioimpedância</div>
                       </div>
@@ -3404,7 +3413,7 @@ export default function Home() {
                         <input type="number" className="login-input" value={calcGordura} placeholder="Ex: 22.5"
                           onChange={e => setCalcGordura(e.target.value)} />
                       </div>
-                      {calcGordura && <div className="bio-formula-note">✅ Usando Katch-McArdle (mais preciso com % gordura)</div>}
+                      {calcGordura && <div className="bio-formula-note"><CheckCircle2 size={13}/> Usando Katch-McArdle (mais preciso com % gordura)</div>}
                     </div>
                   )}
                 </div>
@@ -3442,9 +3451,9 @@ export default function Home() {
                   <label className="calc-label">Objetivo Principal</label>
                   <div className="calc-obj-row">
                     {([
-                      { v:'emagrecer', label:'📉 Emagrecer' },
-                      { v:'manter',    label:'➡️ Manter'    },
-                      { v:'ganhar',    label:'📈 Ganhar'     },
+                      { v:'emagrecer', label:'Emagrecer' },
+                      { v:'manter',    label:'Manter'    },
+                      { v:'ganhar',    label:'Ganhar'    },
                     ] as const).map(({ v, label }) => (
                       <button key={v} className={`calc-obj-btn ${calcObjetivo === v ? 'active' : ''}`}
                         onClick={() => setCalcObjetivo(v)}>{label}</button>
@@ -3453,7 +3462,7 @@ export default function Home() {
                 </div>
                 <button className="btn" style={{ marginTop:14 }} onClick={handleCalc}
                   disabled={!calcPeso || !calcAltura || !calcIdade}>
-                  🧮 Calcular
+                  <Calculator size={15}/> Calcular
                 </button>
                 {calcResult && (
                   <div className="calc-result-box">
@@ -3471,9 +3480,9 @@ export default function Home() {
                     {/* Cards de objetivo — selecionáveis */}
                     <div className="calc-options-grid">
                       {([
-                        { obj:'emagrecer', label:'📉 EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
-                        { obj:'manter',    label:'➡️ MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
-                        { obj:'ganhar',    label:'📈 GANHAR',     val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
+                        { obj:'emagrecer', label:'EMAGRECER', val:calcResult.emagrecer, desc:'déficit · perda de peso' },
+                        { obj:'manter',    label:'MANTER',    val:calcResult.manter,    desc:'igual ao TDEE · manutenção' },
+                        { obj:'ganhar',    label:'GANHAR',    val:calcResult.ganhar,    desc:'superávit · ganho de massa' },
                       ] as const).map(({ obj, label, val, desc }) => (
                         <div key={obj}
                           className={`calc-option-card ${calcObjetivo === obj ? 'active' : ''}`}
@@ -3488,12 +3497,12 @@ export default function Home() {
                     {(calcObjetivo === 'emagrecer' || calcObjetivo === 'ganhar') && (
                       <div className="deficit-section">
                         <div className="deficit-title">
-                          {calcObjetivo === 'emagrecer' ? '📌 Escolha o déficit:' : '📌 Escolha o superávit:'}
+                          {calcObjetivo === 'emagrecer' ? 'Escolha o déficit:' : 'Escolha o superávit:'}
                         </div>
                         <div className="deficit-row">
                           {([
                             { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
-                            { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado ✅' },
+                            { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado' },
                             { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
                           ] as const).map(({ id, label, pct, desc }) => {
                             const cals = calcObjetivo === 'emagrecer'
@@ -3531,7 +3540,7 @@ export default function Home() {
                           useDietCals(cals, calcObjetivo)
                         }
                       }}>
-                      🧮 Usar →
+                      <Calculator size={14}/> Usar
                     </button>
                   </div>
                 )}
@@ -3543,10 +3552,10 @@ export default function Home() {
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('dieta')}>
               <div className="config-section-title-group">
-                <span>🍽️ Gerar Dieta</span>
+                <span className="config-section-label"><Utensils size={15}/> Gerar Dieta</span>
                 <span className="config-section-desc">Monte seu cardápio automático</span>
               </div>
-              <span className={`config-section-arrow ${configSections.dieta ? 'open' : ''}`}>▼</span>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.dieta ? 'open' : ''}`} />
             </div>
             {configSections.dieta && (
               <div className="config-section-body">
@@ -3573,13 +3582,13 @@ export default function Home() {
                 <div className="calc-field" style={{ marginTop:12 }}>
                   <label className="calc-label">Preferência de alimentos</label>
                   <div className="calc-obj-row">
-                    <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}>✨ Melhor qualidade</button>
-                    <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}>💰 Simples / Barato</button>
+                    <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}><Sparkles size={14}/> Melhor qualidade</button>
+                    <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}><Coins size={14}/> Simples / Barato</button>
                   </div>
                 </div>
                 <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
                   disabled={!dietTarget || parseInt(dietTarget) < 500}>
-                  🚀 Gerar Dieta Automaticamente
+                  <Zap size={15}/> Gerar Dieta Automaticamente
                 </button>
 
                 {generatedDiet && (() => {
@@ -3590,7 +3599,7 @@ export default function Home() {
                   const totalF    = generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0)
                   const diff      = totalKcal - target
                   const diffColor = Math.abs(diff) <= 100 ? 'var(--success)' : diff > 0 ? 'var(--error)' : 'var(--warning)'
-                  const diffText  = Math.abs(diff) <= 100 ? '✅ No alvo' : diff > 0 ? `+${diff} kcal acima` : `${Math.abs(diff)} kcal abaixo`
+                  const diffText  = Math.abs(diff) <= 100 ? 'No alvo' : diff > 0 ? `+${diff} kcal acima` : `${Math.abs(diff)} kcal abaixo`
                   return (
                     <>
                       <div className="diet-gen-summary">
@@ -3605,11 +3614,11 @@ export default function Home() {
                         </div>
                         {Math.abs(diff) > 150 && (
                           <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
-                            🔄 Reajustar para meta
+                            <RefreshCw size={13}/> Reajustar para meta
                           </button>
                         )}
                         <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
-                          💾 Salvar como Meu Cardápio
+                          <CheckCircle2 size={15}/> Salvar como Meu Cardápio
                         </button>
                       </div>
 
@@ -3631,10 +3640,10 @@ export default function Home() {
                                 </div>
                                 <div className="diet-gen-item-detail">
                                   {item.grams}g · {item.kcal} kcal · P{item.p}g · C{item.c}g · G{item.f}g
-                                  {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"> 💰</span>}
+                                  {BUDGET_IDS.has(item.food.id) && <span className="diet-budget-badge"><Coins size={11}/></span>}
                                 </div>
                               </div>
-                              <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}>🔄</button>
+                              <button className="diet-sub-btn" title="Substituir" onClick={() => openDietSubModal(mi, ii)}><ArrowLeftRight size={13}/></button>
                             </div>
                           ))}
                         </div>
@@ -3650,16 +3659,16 @@ export default function Home() {
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('cardapio')}>
               <div className="config-section-title-group">
-                <span>📋 Meu Cardápio</span>
+                <span className="config-section-label"><ClipboardList size={15}/> Meu Cardápio</span>
                 <span className="config-section-desc">Edite e organize seus alimentos</span>
               </div>
-              <span className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`}>▼</span>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`} />
             </div>
             {configSections.cardapio && (
               <div className="config-section-body">
                 {/* ── Buscar TACO ── */}
                 <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8 }}>
-                  <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}>🥗 Buscar TACO</button>
+                  <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}><Search size={13}/> Buscar TACO</button>
                 </div>
 
                 {/* ── Adicionar alimento manual ── */}
@@ -3726,7 +3735,7 @@ export default function Home() {
                       <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
                         onClick={() => openItemModal('add', mealIdx)}>+ Adicionar manual</button>
                       <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                        onClick={() => openTACO(mealIdx)}>🥗 Buscar TACO</button>
+                        onClick={() => openTACO(mealIdx)}><Search size={13}/> Buscar TACO</button>
                     </div>
                   </div>
                 ))}
@@ -3738,10 +3747,10 @@ export default function Home() {
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('subs')}>
               <div className="config-section-title-group">
-                <span>🔄 Substituidores</span>
+                <span className="config-section-label"><ArrowLeftRight size={15}/> Substituidores</span>
                 <span className="config-section-desc">Gerencie alternativas por alimento</span>
               </div>
-              <span className={`config-section-arrow ${configSections.subs ? 'open' : ''}`}>▼</span>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.subs ? 'open' : ''}`} />
             </div>
             {configSections.subs && (
               <div className="config-section-body">
@@ -3796,7 +3805,7 @@ export default function Home() {
         ))}
       </nav>
 
-      <footer>💪 Consistência vence tudo. Você consegue!</footer>
+      <footer><Dumbbell size={13}/> Consistência vence tudo. Você consegue!</footer>
     </div>
   )
 }
