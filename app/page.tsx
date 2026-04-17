@@ -203,6 +203,15 @@ function macroDesc(item: { kcal: number; p: number; c: number; f: number }) {
   return `${item.kcal} kcal · P ${item.p}g · C ${item.c}g · G ${item.f}g`
 }
 
+/** Fonte única de verdade para metas de macros.
+ *  Proteína: 2g/kg · Gordura: 25% das calorias · Carbo: resto */
+function computeMacros(targetCals: number, pesoKg: number): { p: number; c: number; f: number } {
+  const p  = Math.round(pesoKg * 2)
+  const f  = Math.round(targetCals * 0.25 / 9)
+  const c  = Math.max(0, Math.round((targetCals - p * 4 - f * 9) / 4))
+  return { p, c, f }
+}
+
 function dateLabel(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
 }
@@ -1186,10 +1195,10 @@ export default function Home() {
       const lbm = peso * (1 - gordPct / 100)
       tmb = 370 + (21.6 * lbm)
     } else {
-      // Harris-Benedict revisada
+      // Mifflin-St Jeor (mais preciso que Harris-Benedict)
       tmb = calcSexo === 'M'
-        ? 88.362 + (13.397 * peso) + (4.799 * altura) - (5.677 * idade)
-        : 447.593 + (9.247 * peso) + (3.098 * altura) - (4.330 * idade)
+        ? 10 * peso + 6.25 * altura - 5 * idade + 5
+        : 10 * peso + 6.25 * altura - 5 * idade - 161
     }
 
     const FACTORS: Record<string, number> = { sed:1.2, leve:1.375, mod:1.55, int:1.725, muito:1.9 }
@@ -1205,8 +1214,8 @@ export default function Home() {
       tmb:       Math.round(tmb),
       tdee:      Math.round(tdee),
       manter:    Math.round(tdee),
-      emagrecer: Math.round(tdee - 500),
-      ganhar:    Math.round(tdee + 500),
+      emagrecer: Math.round(tdee * 0.75), // prévia: déficit moderado de 25%
+      ganhar:    Math.round(tdee * 1.20), // prévia: superávit moderado de 20%
     })
   }
 
@@ -1285,8 +1294,10 @@ export default function Home() {
     setDietTarget(String(cals))
     setDietBudget(false)
     setGeneratedDiet(null)
-    // Salva a meta calórica escolhida para que CAL_META e o Status do Dia reflitam o déficit/superávit correto
-    const ng = { ...userGoals, cals }
+    // Fonte única de verdade: salva calorias + macros calculados pela fórmula
+    const peso = parseFloat(calcPeso)
+    const macros = peso > 0 ? computeMacros(cals, peso) : {}
+    const ng = { ...userGoals, cals, ...macros }
     setUserGoals(ng)
     save({ userGoals: ng })
     // Tela dedicada de onboarding: avança para passo 2 (escolha de refeições) sem sair da tela
@@ -1410,13 +1421,15 @@ export default function Home() {
         }
       }),
     }))
-    // Sync userGoals.cals with the diet target so CAL_META always matches.
-    // This covers the case where the user typed the target directly (bypassing
-    // the calculator "Usar →" button that also saves the goal).
+    // Fonte única de verdade: sincroniza calorias + macros ao salvar a dieta.
     const target = parseInt(dietTarget)
-    const ng = target > 0 && target !== userGoals.cals
-      ? { ...userGoals, cals: target }
-      : userGoals
+    const peso   = parseFloat(calcPeso)
+    const macros = target > 0 && peso > 0 ? computeMacros(target, peso) : null
+    const ng = {
+      ...userGoals,
+      ...(target > 0 ? { cals: target } : {}),
+      ...(macros ?? {}),
+    }
     if (ng !== userGoals) setUserGoals(ng)
     setMeals(nm)
     save({ meals: nm, userGoals: ng })
@@ -1713,10 +1726,11 @@ export default function Home() {
                       </div>
                       <div className="deficit-row">
                         {([
-                          { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
-                          { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado' },
-                          { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
-                        ] as const).map(({ id, label, pct, desc }) => {
+                          { id:'leve', label:'Leve',      pctEm:15, pctGan:10, desc:'Confortável' },
+                          { id:'mod',  label:'Moderado',  pctEm:25, pctGan:20, desc:'Recomendado' },
+                          { id:'agr',  label:'Agressivo', pctEm:35, pctGan:30, desc:'Rápido' },
+                        ] as const).map(({ id, label, pctEm, pctGan, desc }) => {
+                          const pct  = calcObjetivo === 'emagrecer' ? pctEm : pctGan
                           const cals = calcObjetivo === 'emagrecer'
                             ? Math.round(calcResult.tdee * (1 - pct / 100))
                             : Math.round(calcResult.tdee * (1 + pct / 100))
@@ -1764,7 +1778,9 @@ export default function Home() {
                       } else if (calcDeficit === 'custom') {
                         useDietCals(parseInt(customCalGoal), calcObjetivo)
                       } else {
-                        const pcts = { leve:10, mod:15, agr:20 }
+                        const pcts = calcObjetivo === 'emagrecer'
+                          ? { leve:15, mod:25, agr:35 }
+                          : { leve:10, mod:20, agr:30 }
                         const pct  = pcts[calcDeficit as 'leve'|'mod'|'agr']
                         const cals = calcObjetivo === 'emagrecer'
                           ? Math.round(calcResult.tdee * (1 - pct / 100))
@@ -3597,10 +3613,11 @@ export default function Home() {
                         </div>
                         <div className="deficit-row">
                           {([
-                            { id:'leve', label:'Leve',      pct:10, desc:'Confortável' },
-                            { id:'mod',  label:'Moderado',  pct:15, desc:'Recomendado' },
-                            { id:'agr',  label:'Agressivo', pct:20, desc:'Rápido' },
-                          ] as const).map(({ id, label, pct, desc }) => {
+                            { id:'leve', label:'Leve',      pctEm:15, pctGan:10, desc:'Confortável' },
+                            { id:'mod',  label:'Moderado',  pctEm:25, pctGan:20, desc:'Recomendado' },
+                            { id:'agr',  label:'Agressivo', pctEm:35, pctGan:30, desc:'Rápido' },
+                          ] as const).map(({ id, label, pctEm, pctGan, desc }) => {
+                            const pct  = calcObjetivo === 'emagrecer' ? pctEm : pctGan
                             const cals = calcObjetivo === 'emagrecer'
                               ? Math.round(calcResult.tdee * (1 - pct / 100))
                               : Math.round(calcResult.tdee * (1 + pct / 100))
@@ -3648,7 +3665,9 @@ export default function Home() {
                         } else if (calcDeficit === 'custom') {
                           useDietCals(parseInt(customCalGoal), calcObjetivo)
                         } else {
-                          const pcts = { leve:10, mod:15, agr:20 }
+                          const pcts = calcObjetivo === 'emagrecer'
+                            ? { leve:15, mod:25, agr:35 }
+                            : { leve:10, mod:20, agr:30 }
                           const pct  = pcts[calcDeficit as 'leve'|'mod'|'agr']
                           const cals = calcObjetivo === 'emagrecer'
                             ? Math.round(calcResult.tdee * (1 - pct / 100))
