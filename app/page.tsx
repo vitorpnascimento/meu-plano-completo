@@ -1,6 +1,13 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  ClipboardList, Scale, BarChart3, Settings,
+  Flag, CheckCircle2, RotateCcw,
+  Sun, Moon,
+  FileDown, Copy, ArrowLeft,
+  Camera, Trash2,
+} from 'lucide-react'
 import type { User } from 'firebase/auth'
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, ComposedChart,
@@ -509,10 +516,11 @@ export default function Home() {
   // Seções expansíveis do Config — todas fechadas por padrão
   const [configSections, setConfigSections] = useState<Record<string, boolean>>({})
 
-  const [showFinalize,      setShowFinalize]      = useState(false)
-  const [finObs,            setFinObs]            = useState('')
-  const [finExtras,         setFinExtras]         = useState('')
-  const [showWeightHistory, setShowWeightHistory] = useState(false)
+  const [showFinalize,            setShowFinalize]            = useState(false)
+  const [finObs,                  setFinObs]                  = useState('')
+  const [finExtras,               setFinExtras]               = useState('')
+  const [showWeightHistory,       setShowWeightHistory]       = useState(false)
+  const [showDeleteWeightConfirm, setShowDeleteWeightConfirm] = useState(false)
 
   const [itemModal, setItemModal] = useState<null|{ mode:'edit'|'add'; mealIdx:number; item?:MealItem }>(null)
   const [itemForm,  setItemForm]  = useState(BLANK_ITEM_FORM)
@@ -874,6 +882,13 @@ export default function Home() {
     setDayStats(newDS)
     save({ dayStats: newDS })
     setShowFinalize(false); setFinObs(''); setFinExtras('')
+  }
+
+  const unfinalizarDia = () => {
+    const today = getToday()
+    const newDS = { ...dayStats, [today]: { ...dayStats[today], finalizado: false } }
+    setDayStats(newDS)
+    save({ dayStats: newDS })
   }
 
   // ── Ações: Peso ─────────────────────────────────────────────────────────────
@@ -2303,11 +2318,34 @@ export default function Home() {
         </div>
       )}
 
+      {/* ══ Modal: Apagar Histórico de Peso ══ */}
+      {showDeleteWeightConfirm && (
+        <div className="modal-overlay" onClick={() => setShowDeleteWeightConfirm(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8, color:'var(--error)' }}>
+              <Trash2 size={18}/> Apagar histórico de peso
+            </div>
+            <p style={{ fontSize:14, color:'var(--text-secondary)', margin:'8px 0 20px' }}>
+              Tem certeza? Todos os registros de peso serão removidos.<br/>
+              <strong>Esta ação não pode ser desfeita.</strong>
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-cancel" onClick={() => setShowDeleteWeightConfirm(false)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={() => {
+                setWeightsData({})
+                save({ weightHistory: {} })
+                setShowDeleteWeightConfirm(false)
+              }}>Apagar tudo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ Modal: Dia Finalizado ══ */}
       {showFinalize && (
         <div className="modal-overlay" onClick={() => setShowFinalize(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
-            <div className="modal-title">Finalizar Dia 🏁</div>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}><Flag size={18}/> Finalizar Dia</div>
             <label className="modal-label">O que comeu fora da dieta?</label>
             <textarea className="modal-textarea" rows={3} placeholder="Ex: brigadeiro, pizza..."
               value={finObs} onChange={e => setFinObs(e.target.value)} />
@@ -2445,10 +2483,24 @@ export default function Home() {
               {/* Header do relatório */}
               <div className="report-header">
                 <div>
-                  <div className="report-title">💪 Meu Plano — Relatório {reportResult.periodLabel}</div>
+                  <div className="report-title">Meu Plano — Relatório {reportResult.periodLabel}</div>
                   <div className="report-subtitle">Período: {reportResult.dateRange}</div>
                 </div>
                 <button className="report-close-btn" onClick={() => setShowReport(false)}>✕</button>
+              </div>
+
+              {/* Barra de ações — topo (fix Safari mobile) */}
+              <div className="report-action-bar report-action-bar--top">
+                <button className="btn btn-cancel btn-small" style={{ width:'auto' }}
+                  onClick={() => { setReportStep('select'); setReportResult(null) }}>
+                  <ArrowLeft size={14}/> Novo
+                </button>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={copyReportToClipboard}>
+                  <Copy size={14}/> Copiar
+                </button>
+                <button className="btn btn-small" style={{ width:'auto' }} onClick={() => window.print()}>
+                  <FileDown size={14}/> PDF
+                </button>
               </div>
 
               <div className="report-body">
@@ -2564,17 +2616,17 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Barra de ações */}
+              {/* Barra de ações — rodapé */}
               <div className="report-action-bar">
                 <button className="btn btn-cancel btn-small" style={{ width:'auto' }}
                   onClick={() => { setReportStep('select'); setReportResult(null) }}>
-                  ← Novo
+                  <ArrowLeft size={14}/> Novo
                 </button>
                 <button className="btn btn-small" style={{ width:'auto' }} onClick={copyReportToClipboard}>
-                  📋 Copiar
+                  <Copy size={14}/> Copiar
                 </button>
                 <button className="btn btn-small" style={{ width:'auto' }} onClick={() => window.print()}>
-                  📥 PDF
+                  <FileDown size={14}/> PDF
                 </button>
               </div>
             </div>
@@ -2639,7 +2691,7 @@ export default function Home() {
                 title={isDark ? 'Mudar para modo claro' : 'Mudar para modo escuro'}
                 onClick={() => setIsDark(d => !d)}
               >
-                {isDark ? '☀️' : '🌙'}
+                {isDark ? <Sun size={18} /> : <Moon size={18} />}
               </button>
             </div>
           </div>
@@ -2660,16 +2712,16 @@ export default function Home() {
         {/* Tab bar — oculto no mobile (substituído pela bottom nav) */}
         <div className="tabs">
           {[
-            { id:'hoje',         label:'📋 Hoje'   },
-            { id:'peso',         label:'⚖️ Peso'  },
-            { id:'estatísticas', label:'📊 Stats'  },
-            { id:'config',       label:'⚙️ Config' },
+            { id:'hoje',         icon:<ClipboardList size={15}/>, label:'Hoje'   },
+            { id:'peso',         icon:<Scale size={15}/>,         label:'Peso'   },
+            { id:'estatísticas', icon:<BarChart3 size={15}/>,     label:'Stats'  },
+            { id:'config',       icon:<Settings size={15}/>,      label:'Config' },
           ].map(t => (
             <button key={t.id}
               className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
               disabled={inAutoSetup && t.id !== 'config'}
               onClick={() => setActiveTab(t.id)}>
-              {t.label}
+              {t.icon}{' '}{t.label}
             </button>
           ))}
         </div>
@@ -2866,15 +2918,20 @@ export default function Home() {
           {/* Finalizar Dia */}
           {todayFinished ? (
             <div className="day-finalized-card">
-              <div style={{ fontSize: 26 }}>✅</div>
-              <div>
+              <CheckCircle2 size={26} style={{ color: 'var(--success)', flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
                 <div className="day-finalized-title">Dia Finalizado às {todayStat.timestamp}</div>
                 <div className="day-finalized-feedback" style={{ color: todayFeedback.color }}>{todayFeedback.msg}</div>
                 {todayStat.observacoes && <div className="day-finalized-obs">"{todayStat.observacoes}"</div>}
               </div>
+              <button className="btn btn-reabrir" onClick={unfinalizarDia}>
+                <RotateCcw size={14} /> Reabrir
+              </button>
             </div>
           ) : (
-            <button className="btn btn-finalizar" onClick={() => setShowFinalize(true)}>🏁 Finalizar Dia</button>
+            <button className="btn btn-finalizar" onClick={() => setShowFinalize(true)}>
+              <Flag size={16} /> Finalizar Dia
+            </button>
           )}
 
         </div>
@@ -2918,10 +2975,16 @@ export default function Home() {
                     </div>
                   )}
                   {todayWeightFoto && <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" style={{ marginBottom: 14 }} />}
-                  <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
-                    onClick={() => setShowWeightHistory(true)}>
-                    Ver histórico completo
-                  </button>
+                  <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+                    <button className="btn btn-small" style={{ width: 'auto' }}
+                      onClick={() => setShowWeightHistory(true)}>
+                      Ver histórico completo
+                    </button>
+                    <button className="btn btn-small btn-danger-outline" style={{ width: 'auto' }}
+                      onClick={() => setShowDeleteWeightConfirm(true)}>
+                      <Trash2 size={13}/> Apagar histórico
+                    </button>
+                  </div>
                 </div>
               )
             }
@@ -2949,7 +3012,10 @@ export default function Home() {
             <div className="card-title">{todayWeight !== null ? 'Atualizar Peso de Hoje' : 'Registrar Peso'}</div>
             <input type="number" placeholder="Seu peso em kg" step="0.1" id="weight-input" />
             <label className="photo-upload-label">
-              {weightPhoto ? '✓ Foto selecionada' : '📷 Adicionar foto (opcional)'}
+              {weightPhoto
+                ? <><CheckCircle2 size={15}/> Foto selecionada</>
+                : <><Camera size={15}/> Adicionar foto (opcional)</>
+              }
               <input type="file" accept="image/*" onChange={handlePhotoSelect} />
             </label>
             {weightPhoto && (
@@ -3715,10 +3781,10 @@ export default function Home() {
       {/* ══ Bottom Navigation (mobile only) ══ */}
       <nav className="bottom-nav">
         {[
-          { id:'hoje',         icon:'📋', label:'Hoje'   },
-          { id:'peso',         icon:'⚖️', label:'Peso'   },
-          { id:'estatísticas', icon:'📊', label:'Stats'  },
-          { id:'config',       icon:'⚙️', label:'Config' },
+          { id:'hoje',         icon:<ClipboardList size={22}/>, label:'Hoje'   },
+          { id:'peso',         icon:<Scale size={22}/>,         label:'Peso'   },
+          { id:'estatísticas', icon:<BarChart3 size={22}/>,     label:'Stats'  },
+          { id:'config',       icon:<Settings size={22}/>,      label:'Config' },
         ].map(t => (
           <button key={t.id}
             className={`bottom-nav-btn ${activeTab === t.id ? 'active' : ''}`}
