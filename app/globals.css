@@ -3123,6 +3123,7 @@ html.dark .regen-suggestion { background: rgba(96,165,250,0.08); border-color: r
 .onb-body {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px 16px;
   max-width: 560px;
   width: 100%;
@@ -3544,6 +3545,39 @@ html.dark .weight-hero-card { background: #16213E; }
 html.dark .activity-btn { background: #16213E; border-color: #2D2D4E; }
 html.dark .activity-btn:hover,
 html.dark .activity-btn.active { border-color: var(--primary); background: rgba(99,102,241,0.12); }
+
+/* ── Onboarding navigation row (Voltar / Continuar) ── */
+.onb-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.onb-nav-back {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.onb-nav-back:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+.onb-nav-next {
+  flex: 1;
+  min-width: 0;
+}
+html.dark .onb-nav-back { border-color: #2D2D4E; color: var(--text-secondary); }
+html.dark .onb-nav-back:hover { border-color: #4D4D7E; color: var(--text-primary); }
 
 /* ── Custom calorie goal row ── */
 .custom-goal-row {

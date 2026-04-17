@@ -515,7 +515,7 @@ export default function Home() {
   // Tela dedicada de onboarding (fluxo guiado: passo 1=calc, passo 2=refeições, passo 3=gerar dieta)
   const [onboardingScreen,     setOnboardingScreen]     = useState(false)
   const [onboardingScreenStep, setOnboardingScreenStep] = useState<1|2|3>(1)
-  const [onboardingMealIds,    setOnboardingMealIds]    = useState<string[]>(['cafe','almoco','lanche','jantar','ceia'])
+  const [onboardingMealIds,    setOnboardingMealIds]    = useState<string[]>([])
   const [customCalGoal,        setCustomCalGoal]        = useState('')
 
   // ── Setup gate ───────────────────────────────────────────────────────────────
@@ -1811,15 +1811,14 @@ export default function Home() {
               {onboardingMealIds.length < 3 && (
                 <p className="meal-min-warn">Selecione ao menos 3 refeições</p>
               )}
-              <div style={{ display:'flex', gap:8, marginTop:16 }}>
-                <button className="btn btn-cancel" style={{ flex:'0 0 auto' }}
-                  onClick={() => setOnboardingScreenStep(1)}>
+              <div className="onb-nav-row">
+                <button className="onb-nav-back" onClick={() => setOnboardingScreenStep(1)}>
                   <ArrowLeft size={14}/> Voltar
                 </button>
-                <button className="btn" style={{ flex:1 }}
+                <button className="btn onb-nav-next"
                   disabled={onboardingMealIds.length < 3}
                   onClick={() => setOnboardingScreenStep(3)}>
-                  <ArrowLeft size={14} style={{ transform:'rotate(180deg)' }}/> Continuar
+                  Continuar
                 </button>
               </div>
             </div>
@@ -1843,12 +1842,11 @@ export default function Home() {
                   <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}><Coins size={14}/> Simples / Barato</button>
                 </div>
               </div>
-              <div style={{ display:'flex', gap:8, marginTop:14 }}>
-                <button className="btn btn-cancel" style={{ flex:'0 0 auto' }}
-                  onClick={() => setOnboardingScreenStep(2)}>
+              <div className="onb-nav-row">
+                <button className="onb-nav-back" onClick={() => setOnboardingScreenStep(2)}>
                   <ArrowLeft size={14}/> Voltar
                 </button>
-                <button className="btn" style={{ flex:1 }} onClick={handleGenerateDiet}
+                <button className="btn onb-nav-next" onClick={handleGenerateDiet}
                   disabled={!dietTarget || parseInt(dietTarget) < 500}>
                   <Zap size={15}/> Gerar Dieta
                 </button>
