@@ -388,17 +388,99 @@ function buildItem(food: TacoFood, targetKcal: number, share: number): Generated
   }
 }
 
+// ─── Ajuste de macros ─────────────────────────────────────────────────────────
+
+/** Classifica um alimento pelo seu macro dominante em calorias. */
+function dominantMacro(food: TacoFood): 'protein' | 'carb' | 'fat' | 'mixed' {
+  if (food.kcal <= 0) return 'mixed'
+  const pPct = (food.p * 4) / food.kcal
+  const cPct = (food.c * 4) / food.kcal
+  const fPct = (food.f * 9) / food.kcal
+  if (pPct >= 0.35) return 'protein'
+  if (cPct >= 0.50) return 'carb'
+  if (fPct >= 0.35) return 'fat'
+  return 'mixed'
+}
+
+/** Reescala as porções da dieta para bater com as metas de macros.
+ *  - Alimentos proteicos são escalados para atingir a meta de proteína
+ *  - Alimentos de carboidrato para a meta de carbo
+ *  - Alimentos gordurosos para a meta de gordura
+ *  Tolerância esperada: ±5g por macro (erro de arredondamento e cross-contamination). */
+function scaleDietToMacros(
+  draft:   GeneratedDiet,
+  targets: { p: number; c: number; f: number },
+): GeneratedDiet {
+  type Role = 'protein' | 'carb' | 'fat' | 'mixed'
+  type Ref  = { mi: number; ii: number; item: GeneratedItem; role: Role }
+
+  const refs: Ref[] = draft.flatMap((meal, mi) =>
+    meal.items.map((item, ii) => ({ mi, ii, item, role: dominantMacro(item.food) }))
+  )
+
+  const sumByRole = (role: Role, macro: 'p' | 'c' | 'f') =>
+    refs.filter(r => r.role === role).reduce((s, r) => s + r.item[macro], 0)
+
+  // Contribuição "fixa" (dos alimentos que NÃO serão escalados para esse macro)
+  const fixedP = refs.filter(r => r.role !== 'protein').reduce((s, r) => s + r.item.p, 0)
+  const fixedC = refs.filter(r => r.role !== 'carb'   ).reduce((s, r) => s + r.item.c, 0)
+  const fixedF = refs.filter(r => r.role !== 'fat'    ).reduce((s, r) => s + r.item.f, 0)
+
+  const varP = sumByRole('protein', 'p')
+  const varC = sumByRole('carb',    'c')
+  const varF = sumByRole('fat',     'f')
+
+  const clampScale = (v: number) => Math.max(0.3, Math.min(4.0, v))
+  const pScale = varP > 0 ? clampScale((targets.p - fixedP) / varP) : 1
+  const cScale = varC > 0 ? clampScale((targets.c - fixedC) / varC) : 1
+  const fScale = varF > 0 ? clampScale((targets.f - fixedF) / varF) : 1
+
+  return draft.map((meal, mi) => {
+    const items = meal.items.map((item, ii) => {
+      const role  = refs.find(r => r.mi === mi && r.ii === ii)!.role
+      const scale = role === 'protein' ? pScale
+                  : role === 'carb'    ? cScale
+                  : role === 'fat'     ? fScale
+                  : 1
+
+      let grams = Math.max(10, Math.min(600, Math.round(item.grams * scale / 5) * 5))
+      // Respeitar limite de unidades naturais (ex: máximo 3 bananas)
+      const maxUnits = FOOD_MAX_UNITS[item.food.id]
+      if (maxUnits !== undefined && FOOD_UNITS[item.food.id]) {
+        const maxG = maxUnits * FOOD_UNITS[item.food.id].unitWeight
+        if (grams > maxG) grams = Math.max(10, maxG)
+      }
+      const mult = grams / 100
+      return {
+        food: item.food, grams,
+        kcal: Math.round(item.food.kcal * mult),
+        p:    +(item.food.p * mult).toFixed(1),
+        c:    +(item.food.c * mult).toFixed(1),
+        f:    +(item.food.f * mult).toFixed(1),
+      }
+    })
+    return { ...meal, items, actualKcal: items.reduce((s, it) => s + it.kcal, 0) }
+  })
+}
+
+// ─── Geração de dieta ─────────────────────────────────────────────────────────
+
 /** Gera uma dieta para a meta calórica informada.
- *  Se `mealIds` for fornecido, filtra e redistribui proporcionalmente as kcal. */
-export function generateDiet(targetCals: number, preferBudget: boolean, mealIds?: string[]): GeneratedDiet {
+ *  - `mealIds`: filtra e redistribui proporcionalmente as kcal
+ *  - `macroTargets`: reescala porções para respeitar metas de P/C/G */
+export function generateDiet(
+  targetCals:   number,
+  preferBudget: boolean,
+  mealIds?:     string[],
+  macroTargets?: { p: number; c: number; f: number },
+): GeneratedDiet {
   const allTemplates = preferBudget ? BUDGET_TEMPLATES : STD_TEMPLATES
-  // Filter to requested meals (if provided), otherwise use all
   const templates = mealIds
     ? allTemplates.filter(t => mealIds.includes(t.mealId))
     : allTemplates
   // Normalize calShares so they sum to 1.0
   const totalShare = templates.reduce((s, t) => s + t.calShare, 0)
-  return templates.map(tpl => {
+  const draft: GeneratedDiet = templates.map(tpl => {
     const normalizedShare = tpl.calShare / totalShare
     const mealTarget = Math.round(targetCals * normalizedShare)
     const items: GeneratedItem[] = tpl.slots.map(slot => {
@@ -414,6 +496,8 @@ export function generateDiet(targetCals: number, preferBudget: boolean, mealIds?
       items,
     }
   })
+  // Se macroTargets fornecido, reescala porções para respeitar P/C/G
+  return macroTargets ? scaleDietToMacros(draft, macroTargets) : draft
 }
 
 // ─── Unidades de Medida ────────────────────────────────────────────────────────

@@ -1317,7 +1317,11 @@ export default function Home() {
   const handleGenerateDiet = () => {
     const target = parseInt(dietTarget)
     if (!target || target < 500) return
-    setGeneratedDiet(generateDiet(target, dietBudget, onboardingScreen ? onboardingMealIds : undefined))
+    // Passa metas de macros para que o gerador escale as porções corretamente
+    const macroTargets = (userGoals.p > 0 && userGoals.c > 0 && userGoals.f > 0)
+      ? { p: userGoals.p, c: userGoals.c, f: userGoals.f }
+      : undefined
+    setGeneratedDiet(generateDiet(target, dietBudget, onboardingScreen ? onboardingMealIds : undefined, macroTargets))
   }
 
   const openDietSubModal = (mealIdx: number, itemIdx: number) => {
@@ -1421,14 +1425,20 @@ export default function Home() {
         }
       }),
     }))
-    // Fonte única de verdade: sincroniza calorias + macros ao salvar a dieta.
+    // Fonte única de verdade: salva os macros REAIS entregues pela dieta gerada.
+    // Isso garante que "Minha Meta" reflita exatamente o que o cardápio entrega.
+    const allItems = generatedDiet.flatMap(m => m.items)
+    const actualP  = Math.round(allItems.reduce((s, it) => s + it.p, 0))
+    const actualC  = Math.round(allItems.reduce((s, it) => s + it.c, 0))
+    const actualF  = Math.round(allItems.reduce((s, it) => s + it.f, 0))
+    const actualKcal = allItems.reduce((s, it) => s + it.kcal, 0)
     const target = parseInt(dietTarget)
-    const peso   = parseFloat(calcPeso)
-    const macros = target > 0 && peso > 0 ? computeMacros(target, peso) : null
     const ng = {
       ...userGoals,
-      ...(target > 0 ? { cals: target } : {}),
-      ...(macros ?? {}),
+      cals: target > 0 ? target : actualKcal,
+      p: actualP,
+      c: actualC,
+      f: actualF,
     }
     if (ng !== userGoals) setUserGoals(ng)
     setMeals(nm)
