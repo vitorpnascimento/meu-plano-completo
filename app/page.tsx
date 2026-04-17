@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { User } from 'firebase/auth'
 import {
-  BarChart, Bar, LineChart, Line, ComposedChart,
+  BarChart, Bar, LineChart, Line, AreaChart, Area, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Legend,
 } from 'recharts'
@@ -840,10 +840,17 @@ export default function Home() {
   const toggleItem = (itemId: string) => {
     const today = getToday()
     const newChecked = { ...checked, [today]: { ...(checked[today] || {}) } }
+    const isChecking = !newChecked[today][itemId]
     if (newChecked[today][itemId]) delete newChecked[today][itemId]
     else newChecked[today][itemId] = true
     setChecked(newChecked)
     save({ checked: newChecked })
+    // Fase 3: haptic feedback + check animation
+    if (isChecking) {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(50)
+      const el = document.getElementById(`chk-${itemId}`)
+      if (el) { el.classList.add('check-anim'); el.addEventListener('animationend', () => el.classList.remove('check-anim'), { once: true }) }
+    }
   }
 
   const chooseSub = (itemId: string, sub: SubOption | null) => {
@@ -2240,16 +2247,25 @@ export default function Home() {
 
             {weightHistoryAsc.length >= 2 && (
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>Evolução do Peso</div>
-                <ResponsiveContainer width="100%" height={140}>
-                  <LineChart data={weightHistoryAsc} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="label" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
-                    <Tooltip contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 6 }}
-                      formatter={(v: any) => [`${v}kg`, 'Peso']} />
-                    <Line type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', r: 3 }} />
-                  </LineChart>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 8, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Evolução do Peso</div>
+                <ResponsiveContainer width="100%" height={150}>
+                  <AreaChart data={weightHistoryAsc} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="pesoGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="var(--primary)" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-light)" />
+                    <XAxis dataKey="label" tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis domain={['auto', 'auto']} tick={{ fill: 'var(--text-tertiary)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ background: 'var(--card-bg)', border: '1px solid var(--border-light)', borderRadius: 10, fontSize: 13 }}
+                      formatter={(v: any) => [`${v}kg`, 'Peso']}
+                    />
+                    <Area type="monotone" dataKey="peso" stroke="var(--primary)" strokeWidth={2.5}
+                      fill="url(#pesoGrad)" dot={{ fill: 'var(--primary)', r: 3, strokeWidth: 0 }} activeDot={{ r: 5 }} />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             )}
@@ -2668,47 +2684,89 @@ export default function Home() {
             </div>
           )}
 
-          {/* Status do Dia — compacto, clicável */}
+          {/* ── Hero do Dia — anel SVG + macros inline ── */}
           {(() => {
-            const diff     = liveDayTotal - CAL_META
-            const onTarget = Math.abs(diff) <= 50
-            const color    = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : 'var(--error)'
-            const emoji    = onTarget ? '🟢' : diff < 0 ? '🟡' : '🔴'
-            const text     = onTarget
-              ? 'No alvo! Você atingiu sua meta!'
+            const diff       = liveDayTotal - CAL_META
+            const onTarget   = Math.abs(diff) <= 50
+            const color      = onTarget ? 'var(--success)' : diff < 0 ? 'var(--warning)' : 'var(--error)'
+            const statusText = onTarget
+              ? '✓ No alvo — meta atingida!'
               : diff < 0
-                ? `Pouco! Margem: +${Math.abs(diff)} kcal`
-                : `Passou em +${diff} kcal`
-            const dateStr = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'2-digit', month:'2-digit' })
+                ? `Faltam ${Math.abs(diff)} kcal`
+                : `+${diff} kcal acima da meta`
+            const pct    = Math.min(100, CAL_META > 0 ? (liveDayTotal / CAL_META) * 100 : 0)
+            const r      = 42
+            const circ   = 2 * Math.PI * r        // ~263.9
+            const offset = circ * (1 - pct / 100)
+            const dateStr    = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'short' })
+            const mealsMeta  = meals.filter(m => (m.items ?? []).length > 0).length
             return (
-              <div className="week-status-card" style={{ borderColor: color }}
+              <div className="day-hero-card"
                 onClick={() => { setActiveTab('estatísticas'); setStatsSubTab('diario') }}>
-                <div className="week-status-left">
-                  <div className="week-status-title">Status do Dia</div>
-                  <div className="week-status-text" style={{ color }}>
-                    {emoji} {text}
+                <div className="day-hero-header">
+                  <span className="day-hero-date">{dateStr}</span>
+                  <span className="day-hero-meal-badge">{mealsCompleted}/{mealsMeta} refeições</span>
+                </div>
+                <div className="day-hero-body">
+                  {/* Anel SVG */}
+                  <div className="day-hero-ring-wrap">
+                    <svg viewBox="0 0 100 100" className="day-hero-svg" aria-hidden="true">
+                      <circle cx="50" cy="50" r={r} fill="none" stroke="var(--border)" strokeWidth="7" />
+                      <circle cx="50" cy="50" r={r} fill="none"
+                        stroke={color}
+                        strokeWidth="7"
+                        strokeLinecap="round"
+                        strokeDasharray={circ}
+                        strokeDashoffset={offset}
+                        style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.34,1.56,0.64,1)', transformOrigin: '50px 50px', transform: 'rotate(-90deg)' }}
+                      />
+                    </svg>
+                    <div className="day-hero-kcal">
+                      <span className="day-hero-kcal-num">{liveDayTotal.toLocaleString('pt-BR')}</span>
+                      <span className="day-hero-kcal-unit">kcal</span>
+                      <span className="day-hero-kcal-meta">de {CAL_META.toLocaleString('pt-BR')}</span>
+                    </div>
                   </div>
-                  <div className="week-status-sub">
-                    {mealsCompleted}/{meals.length} refeições · {dateStr}
+                  {/* Macro mini bars */}
+                  <div className="day-hero-macros">
+                    {[
+                      { label: 'P', val: totalP, meta: userGoals.p, c: 'var(--protein-color)' },
+                      { label: 'C', val: totalC, meta: userGoals.c, c: 'var(--carb-color)'    },
+                      { label: 'G', val: totalF, meta: userGoals.f, c: 'var(--fat-color)'     },
+                    ].map(({ label, val, meta, c }) => (
+                      <div key={label} className="day-hero-macro-row">
+                        <span className="day-hero-macro-label" style={{ color: c }}>{label}</span>
+                        <div className="day-hero-macro-bar-wrap">
+                          <div className="day-hero-macro-bar-fill"
+                            style={{ width: `${Math.min(100, meta > 0 ? (val/meta)*100 : 0)}%`, background: c }} />
+                        </div>
+                        <span className="day-hero-macro-val">{val}g</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>→</div>
+                <div className="day-hero-status" style={{ color }}>{statusText}</div>
               </div>
             )
           })()}
 
           {/* Refeições colapsáveis */}
           {meals.length === 0 || meals.every(m => (m.items ?? []).length === 0) ? (
-            <div className="card" style={{ textAlign: 'center', padding: '32px 16px' }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>🍽️</div>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Cardápio vazio</div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                Adicione seus alimentos na aba Config → Meu Cardápio
+            <div className="card">
+              <div className="empty-state">
+                <svg className="empty-state-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <circle cx="40" cy="40" r="38" stroke="var(--primary)" strokeWidth="2" strokeDasharray="6 4" />
+                  <path d="M26 52 C26 44 30 36 40 36 C50 36 54 44 54 52" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="33" cy="30" r="4" fill="var(--primary)" opacity="0.5" />
+                  <circle cx="47" cy="30" r="4" fill="var(--primary)" opacity="0.5" />
+                  <path d="M34 48 L46 48" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <div className="empty-state-title">Cardápio vazio</div>
+                <div className="empty-state-desc">Monte seu plano alimentar nas configurações para começar a acompanhar.</div>
+                <button className="btn btn-small empty-state-action" onClick={() => setActiveTab('config')}>
+                  Configurar cardápio
+                </button>
               </div>
-              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
-                onClick={() => setActiveTab('config')}>
-                Ir para Configurações
-              </button>
             </div>
           ) : meals.map(meal => {
             const items       = meal.items ?? []
@@ -2750,7 +2808,7 @@ export default function Home() {
                       return (
                         <div key={item.id} className="meal-item-wrap">
                           <div className="meal-item" onClick={() => toggleItem(item.id)}>
-                            <div className={`checkbox ${todayChecked[item.id] ? 'checked' : ''}`}>
+                            <div id={`chk-${item.id}`} className={`checkbox ${todayChecked[item.id] ? 'checked' : ''}`}>
                               {todayChecked[item.id] ? '✓' : ''}
                             </div>
                             <div className="meal-content">
@@ -2824,30 +2882,68 @@ export default function Home() {
         {/* ══════════════════════════════════════════════════════ PESO */}
         <div className={`tab-content ${activeTab === 'peso' ? 'active' : ''}`}>
 
-          {todayWeight !== null ? (
-            <div className="card today-weight-card">
-              <div className="today-weight-date">
-                {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+          {(() => {
+            // Delta: compara peso de hoje com o registro anterior
+            const prevEntry  = todayWeight !== null ? weightHistoryDesc[1] : weightHistoryDesc[0]
+            const prevWeight = prevEntry?.peso ?? null
+            const deltaBase  = todayWeight ?? (weightHistoryDesc[0]?.peso ?? null)
+            const delta      = deltaBase !== null && prevWeight !== null && (todayWeight !== null ? prevWeight !== deltaBase : true)
+              ? +((deltaBase - prevWeight).toFixed(1)) : null
+
+            if (todayWeight !== null || weightHistoryAsc.length > 0) {
+              const displayWeight = todayWeight ?? weightHistoryDesc[0]?.peso
+              const isToday       = todayWeight !== null
+              return (
+                <div className="weight-hero-card">
+                  <div className="weight-hero-date">
+                    {isToday
+                      ? new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })
+                      : `Último registro · ${new Date((weightHistoryDesc[0]?.date ?? '') + 'T12:00:00').toLocaleDateString('pt-BR', { day:'2-digit', month:'short', year:'2-digit' })}`
+                    }
+                  </div>
+                  <div className="weight-hero-value-row">
+                    <span className="weight-hero-num">{displayWeight}</span>
+                    <span className="weight-hero-unit">kg</span>
+                  </div>
+                  {delta !== null && (
+                    <div className={`weight-hero-delta ${delta < 0 ? 'weight-hero-delta--down' : delta > 0 ? 'weight-hero-delta--up' : 'weight-hero-delta--same'}`}>
+                      {delta < 0 ? '↓' : delta > 0 ? '↑' : '='}
+                      {' '}{delta < 0 ? '' : '+'}{delta}kg vs anterior
+                    </div>
+                  )}
+                  {totalLoss !== null && totalLoss !== 0 && (
+                    <div className="weight-hero-total-loss">
+                      {totalLoss > 0 ? `Total perdido: −${totalLoss}kg` : `Total ganho: +${Math.abs(totalLoss)}kg`}
+                      {' · '}{weightHistoryAsc.length} registros
+                    </div>
+                  )}
+                  {todayWeightFoto && <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" style={{ marginBottom: 14 }} />}
+                  <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
+                    onClick={() => setShowWeightHistory(true)}>
+                    Ver histórico completo
+                  </button>
+                </div>
+              )
+            }
+            return null
+          })()}
+
+          {weightHistoryAsc.length === 0 && (
+            <div className="card">
+              <div className="empty-state" style={{ paddingTop: 28, paddingBottom: 8 }}>
+                <svg className="empty-state-svg" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <rect x="12" y="50" width="8" height="18" rx="2" fill="var(--primary)" opacity="0.3" />
+                  <rect x="24" y="38" width="8" height="30" rx="2" fill="var(--primary)" opacity="0.5" />
+                  <rect x="36" y="28" width="8" height="40" rx="2" fill="var(--primary)" opacity="0.7" />
+                  <rect x="48" y="20" width="8" height="48" rx="2" fill="var(--primary)" />
+                  <circle cx="60" cy="14" r="8" fill="var(--success)" opacity="0.8" />
+                  <path d="M57 14 L59.5 16.5 L63 12" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="empty-state-title">Nenhum registro ainda</div>
+                <div className="empty-state-desc">Registre seu peso abaixo. Quanto mais consistente, mais útil fica o histórico.</div>
               </div>
-              <div className="today-weight-value">{todayWeight}</div>
-              <div className="today-weight-unit">kg</div>
-              {todayWeightFoto && <img src={todayWeightFoto} alt="Foto de hoje" className="today-weight-photo" />}
-              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
-                onClick={() => setShowWeightHistory(true)}>
-                📊 Ver Histórico Completo
-              </button>
             </div>
-          ) : weightHistoryAsc.length > 0 ? (
-            <div className="card" style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                Último registro: {weightHistoryDesc[0]?.peso}kg em {new Date(weightHistoryDesc[0]?.date + 'T12:00:00').toLocaleDateString('pt-BR')}
-              </div>
-              <button className="btn btn-small" style={{ width: 'auto', margin: '0 auto', display: 'block' }}
-                onClick={() => setShowWeightHistory(true)}>
-                📊 Ver Histórico ({weightHistoryAsc.length} registros)
-              </button>
-            </div>
-          ) : null}
+          )}
 
           <div className="card">
             <div className="card-title">{todayWeight !== null ? 'Atualizar Peso de Hoje' : 'Registrar Peso'}</div>
