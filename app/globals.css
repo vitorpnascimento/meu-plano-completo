@@ -3546,6 +3546,50 @@ html.dark .activity-btn { background: #16213E; border-color: #2D2D4E; }
 html.dark .activity-btn:hover,
 html.dark .activity-btn.active { border-color: var(--primary); background: rgba(99,102,241,0.12); }
 
+/* ── Onboarding step 3: resumo da meta (somente leitura) ── */
+.onb-meta-summary {
+  background: var(--primary-light);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.onb-meta-cals {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.onb-meta-cals-val {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--primary);
+  letter-spacing: -1px;
+}
+.onb-meta-cals-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.onb-meta-macros {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.onb-meta-dot { color: var(--text-tertiary); }
+.onb-meta-hint {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+html.dark .onb-meta-summary { background: rgba(99,102,241,0.12); border-color: var(--primary); }
+
 /* ── Onboarding navigation row (Voltar / Continuar) ── */
 .onb-nav-row {
   display: flex;

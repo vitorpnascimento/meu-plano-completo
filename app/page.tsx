@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   ClipboardList, Scale, BarChart3, Settings,
   Flag, CheckCircle2, RotateCcw,
@@ -204,13 +204,18 @@ function macroDesc(item: { kcal: number; p: number; c: number; f: number }) {
 }
 
 /** Fonte única de verdade para metas de macros.
- *  Proteína: 2g/kg · Gordura: 25% das calorias · Carbo: resto */
+ *  Proteína: 2g/kg (máx 40% das kcal) · Gordura: 25% · Carbo: resto */
 function computeMacros(targetCals: number, pesoKg: number): { p: number; c: number; f: number } {
-  const p  = Math.round(pesoKg * 2)
-  const f  = Math.round(targetCals * 0.25 / 9)
-  const c  = Math.max(0, Math.round((targetCals - p * 4 - f * 9) / 4))
+  // Cap protein at 40 % of calories so carbs never go negative
+  const rawP = Math.round(pesoKg * 2)
+  const p    = Math.min(rawP, Math.floor(targetCals * 0.40 / 4))
+  const f    = Math.round(targetCals * 0.25 / 9)
+  const c    = Math.max(0, Math.round((targetCals - p * 4 - f * 9) / 4))
   return { p, c, f }
 }
+
+/** Mínimo de calorias seguro para geração/cálculo de dieta. */
+const MIN_SAFE_CALS = 1000
 
 function dateLabel(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
@@ -804,13 +809,18 @@ export default function Home() {
       weightHistory: weightsData, userGoals,
       ...overrides,
     }
-    localStorage.setItem('dietAppData', JSON.stringify(data))
+    // localStorage pode falhar em modo privado ou quando o storage estiver cheio
+    try {
+      localStorage.setItem('dietAppData', JSON.stringify(data))
+    } catch {
+      // Firebase ainda salva abaixo; dados não são perdidos se houver conexão
+    }
 
     if (isFirebaseConfigured() && authUser) {
       setSyncStatus('syncing')
-      saveUserData(authUser.uid, data).then(ok =>
-        setSyncStatus(ok ? 'synced' : 'offline')
-      )
+      saveUserData(authUser.uid, data)
+        .then(ok => setSyncStatus(ok ? 'synced' : 'offline'))
+        .catch(() => setSyncStatus('error'))
     }
   }
 
@@ -1316,7 +1326,7 @@ export default function Home() {
 
   const handleGenerateDiet = () => {
     const target = parseInt(dietTarget)
-    if (!target || target < 500) return
+    if (!target || target < MIN_SAFE_CALS) return
     // Passa metas de macros para que o gerador escale as porções corretamente
     const macroTargets = (userGoals.p > 0 && userGoals.c > 0 && userGoals.f > 0)
       ? { p: userGoals.p, c: userGoals.c, f: userGoals.f }
@@ -1477,13 +1487,15 @@ export default function Home() {
 
   // ── Histórico de peso ───────────────────────────────────────────────────────
 
-  const weightHistoryAsc = Object.entries(weightsData as Record<string, any>)
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([date, entry]) => ({
-      date, label: dateLabel(date),
-      peso: rawPeso(entry), foto: rawFoto(entry), calorias: rawCalorias(entry),
-    }))
-    .filter(e => e.peso !== null) as { date:string; label:string; peso:number; foto:string|null; calorias:number|null }[]
+  const weightHistoryAsc = useMemo(() =>
+    Object.entries(weightsData as Record<string, any>)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, entry]) => ({
+        date, label: dateLabel(date),
+        peso: rawPeso(entry), foto: rawFoto(entry), calorias: rawCalorias(entry),
+      }))
+      .filter(e => e.peso !== null) as { date:string; label:string; peso:number; foto:string|null; calorias:number|null }[]
+  , [weightsData])
 
   const weightHistoryDesc = [...weightHistoryAsc].reverse()
 
@@ -1502,15 +1514,17 @@ export default function Home() {
 
   // ── Estatísticas ────────────────────────────────────────────────────────────
 
-  const weekDates  = getLastNDates(7)
-  const monthDates = getLastNDates(30)
+  const weekDates  = useMemo(() => getLastNDates(7),  [])
+  const monthDates = useMemo(() => getLastNDates(30), [])
 
-  const weeklyChartData = weekDates.map(d => ({
+  // Memoizado: 7 chamadas calcDayMacros só recalculam quando meals/checked/activeSubs mudam
+  const weeklyChartData = useMemo(() => weekDates.map(d => ({
     label: dateLabel(d),
     cals: calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0),
-  }))
+  })), [weekDates, meals, checked, activeSubs, dayStats])
 
-  const monthlyChartData = (() => {
+  // Memoizado: 30 chamadas calcDayMacros
+  const monthlyChartData = useMemo(() => {
     const out: { label:string; total:number; dias:number; finalizados:number }[] = []
     for (let w = 0; w < 4; w++) {
       const slice = monthDates.slice(w * 7, w * 7 + 7)
@@ -1522,7 +1536,7 @@ export default function Home() {
       out.push({ label: `Sem ${w + 1}`, total, dias: slice.length, finalizados: fin })
     }
     return out
-  })()
+  }, [monthDates, meals, checked, activeSubs, dayStats])
 
   const weekFin   = weekDates.filter(d => dayStats[d]?.finalizado).length
   const weekTotal = weeklyChartData.reduce((s, d) => s + d.cals, 0)
@@ -1537,13 +1551,15 @@ export default function Home() {
     .map(d => ({ label: dateLabel(d), peso: rawPeso(weightsData[d]) }))
     .filter(d => d.peso !== null) as { label:string; peso:number }[]
 
-  const dualChartData = monthDates
-    .map(d => {
-      const peso = rawPeso(weightsData[d])
-      const cals = calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0)
-      return { label: dateLabel(d), peso: peso ?? undefined, cals: cals > 0 ? cals : undefined }
-    })
-    .filter(d => d.peso !== undefined || d.cals !== undefined)
+  const dualChartData = useMemo(() =>
+    monthDates
+      .map(d => {
+        const peso = rawPeso(weightsData[d])
+        const cals = calcDayMacros(meals, checked[d] || {}, activeSubs).cals + (dayStats[d]?.caloriasExtras || 0)
+        return { label: dateLabel(d), peso: peso ?? undefined, cals: cals > 0 ? cals : undefined }
+      })
+      .filter(d => d.peso !== undefined || d.cals !== undefined)
+  , [monthDates, weightsData, meals, checked, activeSubs, dayStats])
 
   const weekFirstW     = weekWeightData[0]?.peso ?? null
   const weekLastW      = weekWeightData[weekWeightData.length - 1]?.peso ?? null
@@ -1780,7 +1796,7 @@ export default function Home() {
                     style={{ marginTop:14, width:'100%' }}
                     disabled={
                       (calcObjetivo !== 'manter' && calcDeficit === null) ||
-                      (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < 500))
+                      (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < MIN_SAFE_CALS))
                     }
                     onClick={() => {
                       if (calcObjetivo === 'manter') {
@@ -1853,15 +1869,22 @@ export default function Home() {
           {/* ── Passo 3: Gerar Dieta ── */}
           {onboardingScreenStep === 3 && (
             <div className="onb-step-content">
-              <div className="calc-field" style={{ marginTop:8 }}>
-                <label className="calc-label">Meta calórica diária</label>
-                <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                  <input type="number" className="login-input" style={{ flex:1 }}
-                    value={dietTarget} onChange={e => setDietTarget(e.target.value)} placeholder="Ex: 1600" />
-                  <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+              {/* Resumo da meta calculada — somente leitura */}
+              <div className="onb-meta-summary">
+                <div className="onb-meta-cals">
+                  <span className="onb-meta-cals-val">{parseInt(dietTarget) > 0 ? parseInt(dietTarget).toLocaleString('pt-BR') : '—'}</span>
+                  <span className="onb-meta-cals-unit">kcal/dia</span>
                 </div>
+                <div className="onb-meta-macros">
+                  <span style={{ color:'var(--protein-color)' }}>P {userGoals.p}g</span>
+                  <span className="onb-meta-dot">·</span>
+                  <span style={{ color:'var(--carb-color)' }}>C {userGoals.c}g</span>
+                  <span className="onb-meta-dot">·</span>
+                  <span style={{ color:'var(--fat-color)' }}>G {userGoals.f}g</span>
+                </div>
+                <div className="onb-meta-hint">Para ajustar, volte ao passo 1 ou edite em Config → Minha Meta</div>
               </div>
-              <div className="calc-field" style={{ marginTop:12 }}>
+              <div className="calc-field" style={{ marginTop:14 }}>
                 <label className="calc-label">Preferência de alimentos</label>
                 <div className="calc-obj-row">
                   <button className={`calc-obj-btn ${!dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(false)}><Sparkles size={14}/> Melhor qualidade</button>
@@ -1873,7 +1896,7 @@ export default function Home() {
                   <ArrowLeft size={14}/> Voltar
                 </button>
                 <button className="btn onb-nav-next" onClick={handleGenerateDiet}
-                  disabled={!dietTarget || parseInt(dietTarget) < 500}>
+                  disabled={!dietTarget || parseInt(dietTarget) < MIN_SAFE_CALS}>
                   <Zap size={15}/> Gerar Dieta
                 </button>
               </div>
@@ -3651,7 +3674,7 @@ export default function Home() {
                       style={{ marginTop:14, width:'100%' }}
                       disabled={
                         (calcObjetivo !== 'manter' && calcDeficit === null) ||
-                        (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < 500))
+                        (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < MIN_SAFE_CALS))
                       }
                       onClick={() => {
                         if (calcObjetivo === 'manter') {
@@ -3716,7 +3739,7 @@ export default function Home() {
                   </div>
                 </div>
                 <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
-                  disabled={!dietTarget || parseInt(dietTarget) < 500}>
+                  disabled={!dietTarget || parseInt(dietTarget) < MIN_SAFE_CALS}>
                   <Zap size={15}/> Gerar Dieta Automaticamente
                 </button>
 

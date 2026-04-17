@@ -414,8 +414,12 @@ function scaleDietToMacros(
   type Role = 'protein' | 'carb' | 'fat' | 'mixed'
   type Ref  = { mi: number; ii: number; item: GeneratedItem; role: Role }
 
+  // roles[mi][ii] = Role — acesso O(1), evita find() em cada item
+  const roles: Role[][] = draft.map(meal =>
+    meal.items.map(item => dominantMacro(item.food))
+  )
   const refs: Ref[] = draft.flatMap((meal, mi) =>
-    meal.items.map((item, ii) => ({ mi, ii, item, role: dominantMacro(item.food) }))
+    meal.items.map((item, ii) => ({ mi, ii, item, role: roles[mi][ii] }))
   )
 
   const sumByRole = (role: Role, macro: 'p' | 'c' | 'f') =>
@@ -437,7 +441,7 @@ function scaleDietToMacros(
 
   return draft.map((meal, mi) => {
     const items = meal.items.map((item, ii) => {
-      const role  = refs.find(r => r.mi === mi && r.ii === ii)!.role
+      const role  = roles[mi][ii]   // O(1) lookup
       const scale = role === 'protein' ? pScale
                   : role === 'carb'    ? cScale
                   : role === 'fat'     ? fScale
