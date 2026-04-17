@@ -936,8 +936,8 @@ export default function Home() {
     const num = parseInt(val); if (isNaN(num) || num <= 0) return
     const ng = { ...userGoals, [key]: num }
     setUserGoals(ng); save({ userGoals: ng })
-    // Se a meta calórica mudou e já existe um cardápio, sugere regenerar
-    if (key === 'cals' && num !== userGoals.cals && meals.some(m => (m.items ?? []).length > 0)) {
+    // Se qualquer meta mudou e já existe um cardápio, avisa o usuário
+    if (num !== userGoals[key] && meals.some(m => (m.items ?? []).length > 0)) {
       setSuggestRegen(true)
     }
   }
@@ -3443,22 +3443,6 @@ export default function Home() {
             </div>
             {configSections.metas && (
               <div className="config-section-body">
-                {suggestRegen && (
-                  <div className="regen-suggestion">
-                    <div><Utensils size={14}/> Sua meta calórica mudou para <strong>{userGoals.cals} kcal/dia</strong>. Deseja gerar um novo cardápio automaticamente?</div>
-                    <div className="regen-actions">
-                      <button className="btn btn-small" style={{ width: 'auto' }} onClick={() => {
-                        setDietTarget(String(userGoals.cals))
-                        setGeneratedDiet(generateDiet(userGoals.cals, dietBudget))
-                        setConfigSections(s => ({ ...s, dieta: true }))
-                        setSuggestRegen(false)
-                      }}>✓ Gerar novo cardápio</button>
-                      <button className="btn btn-small btn-cancel" style={{ width: 'auto' }} onClick={() => setSuggestRegen(false)}>
-                        ✗ Manter atual
-                      </button>
-                    </div>
-                  </div>
-                )}
                 <div className="config-goals" style={{ marginTop: 8 }}>
                   {([{ key:'cals', label:'Calorias', unit:'kcal' },{ key:'p', label:'Proteína', unit:'g' },{ key:'c', label:'Carboidrato', unit:'g' },{ key:'f', label:'Gordura', unit:'g' }] as { key: keyof typeof DEFAULT_GOALS; label:string; unit:string }[]).map(({ key, label, unit }) => (
                     <div key={key} className="config-goal-row">
@@ -3921,6 +3905,29 @@ export default function Home() {
 
         </div>
       </div>
+
+      {/* ══ Toast: dieta desatualizada após edição manual de meta ══ */}
+      {suggestRegen && (
+        <div className="regen-toast">
+          <div className="regen-toast-body">
+            <Utensils size={16} style={{ flexShrink: 0 }}/>
+            <span>Sua meta mudou. Deseja gerar uma nova dieta com base nos novos valores?</span>
+          </div>
+          <div className="regen-toast-actions">
+            <button className="regen-toast-dismiss" onClick={() => setSuggestRegen(false)}>
+              Agora não
+            </button>
+            <button className="btn regen-toast-confirm" onClick={() => {
+              setDietTarget(String(userGoals.cals))
+              setActiveTab('config')
+              setConfigSections(s => ({ ...s, dieta: true, metas: false }))
+              setSuggestRegen(false)
+            }}>
+              Gerar nova dieta
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ══ Bottom Navigation (mobile only) ══ */}
       <nav className="bottom-nav">
