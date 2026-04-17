@@ -278,59 +278,69 @@ export async function searchFoodWithFallback(query: string): Promise<TacoFood | 
 type SlotDef = { id: number; share: number }
 
 const STD_TEMPLATES: { mealId: string; title: string; calShare: number; slots: SlotDef[] }[] = [
-  { mealId:'cafe',   title:'Café da Manhã', calShare:0.20, slots:[
+  { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
     { id:49, share:0.40 }, // Iogurte grego
     { id:27, share:0.35 }, // Aveia
     { id:63, share:0.25 }, // Morango
   ]},
-  { mealId:'almoco', title:'Almoço',        calShare:0.35, slots:[
+  { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+    { id:58, share:0.50 }, // Banana
+    { id:93, share:0.30 }, // Pasta amendoim
+    { id:63, share:0.20 }, // Morango
+  ]},
+  { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
     { id:1,  share:0.40 }, // Frango grelhado
     { id:24, share:0.28 }, // Arroz integral
     { id:37, share:0.18 }, // Batata doce
     { id:72, share:0.10 }, // Brócolis
     { id:89, share:0.04 }, // Azeite
   ]},
-  { mealId:'lanche', title:'Lanche',        calShare:0.15, slots:[
+  { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
     { id:55, share:0.50 }, // Whey
     { id:58, share:0.30 }, // Banana
     { id:93, share:0.20 }, // Pasta amendoim
   ]},
-  { mealId:'jantar', title:'Jantar',        calShare:0.25, slots:[
+  { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
     { id:15, share:0.40 }, // Tilápia
     { id:37, share:0.35 }, // Batata doce
     { id:76, share:0.15 }, // Espinafre
     { id:89, share:0.10 }, // Azeite
   ]},
-  { mealId:'ceia',   title:'Ceia',          calShare:0.05, slots:[
+  { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
     { id:57, share:0.60 }, // Caseína
     { id:27, share:0.40 }, // Aveia
   ]},
 ]
 
 const BUDGET_TEMPLATES: typeof STD_TEMPLATES = [
-  { mealId:'cafe',   title:'Café da Manhã', calShare:0.20, slots:[
+  { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
     { id:19, share:0.40 }, // Ovo cozido
     { id:25, share:0.40 }, // Pão francês
     { id:58, share:0.20 }, // Banana
   ]},
-  { mealId:'almoco', title:'Almoço',        calShare:0.35, slots:[
+  { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+    { id:58, share:0.50 }, // Banana
+    { id:92, share:0.30 }, // Amendoim
+    { id:60, share:0.20 }, // Maçã
+  ]},
+  { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
     { id:2,  share:0.38 }, // Frango cozido
     { id:23, share:0.30 }, // Arroz branco
     { id:40, share:0.22 }, // Feijão carioca
     { id:73, share:0.10 }, // Cenoura
   ]},
-  { mealId:'lanche', title:'Lanche',        calShare:0.15, slots:[
+  { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
     { id:48, share:0.50 }, // Iogurte natural
     { id:60, share:0.30 }, // Maçã
     { id:92, share:0.20 }, // Amendoim
   ]},
-  { mealId:'jantar', title:'Jantar',        calShare:0.25, slots:[
+  { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
     { id:2,  share:0.40 }, // Frango cozido
     { id:23, share:0.30 }, // Arroz branco
     { id:41, share:0.20 }, // Feijão preto
     { id:77, share:0.10 }, // Abobrinha
   ]},
-  { mealId:'ceia',   title:'Ceia',          calShare:0.05, slots:[
+  { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
     { id:47, share:0.65 }, // Leite desnatado
     { id:27, share:0.35 }, // Aveia
   ]},
@@ -378,11 +388,19 @@ function buildItem(food: TacoFood, targetKcal: number, share: number): Generated
   }
 }
 
-/** Gera uma dieta de 5 refeições para a meta calórica informada. */
-export function generateDiet(targetCals: number, preferBudget: boolean): GeneratedDiet {
-  const templates = preferBudget ? BUDGET_TEMPLATES : STD_TEMPLATES
+/** Gera uma dieta para a meta calórica informada.
+ *  Se `mealIds` for fornecido, filtra e redistribui proporcionalmente as kcal. */
+export function generateDiet(targetCals: number, preferBudget: boolean, mealIds?: string[]): GeneratedDiet {
+  const allTemplates = preferBudget ? BUDGET_TEMPLATES : STD_TEMPLATES
+  // Filter to requested meals (if provided), otherwise use all
+  const templates = mealIds
+    ? allTemplates.filter(t => mealIds.includes(t.mealId))
+    : allTemplates
+  // Normalize calShares so they sum to 1.0
+  const totalShare = templates.reduce((s, t) => s + t.calShare, 0)
   return templates.map(tpl => {
-    const mealTarget = Math.round(targetCals * tpl.calShare)
+    const normalizedShare = tpl.calShare / totalShare
+    const mealTarget = Math.round(targetCals * normalizedShare)
     const items: GeneratedItem[] = tpl.slots.map(slot => {
       const food = TACO.find(f => f.id === slot.id)
       if (!food) return null

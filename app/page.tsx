@@ -512,9 +512,11 @@ export default function Home() {
   // ── Onboarding ───────────────────────────────────────────────────────────────
   // 0=off  1=modal boas-vindas  2=hint calc  3=hint dieta  4=done toast
   const [onboardingStep, setOnboardingStep] = useState<0|1|2|3|4>(0)
-  // Tela dedicada de onboarding (fluxo guiado: passo 1=calc, passo 2=gerar dieta)
+  // Tela dedicada de onboarding (fluxo guiado: passo 1=calc, passo 2=refeições, passo 3=gerar dieta)
   const [onboardingScreen,     setOnboardingScreen]     = useState(false)
-  const [onboardingScreenStep, setOnboardingScreenStep] = useState<1|2>(1)
+  const [onboardingScreenStep, setOnboardingScreenStep] = useState<1|2|3>(1)
+  const [onboardingMealIds,    setOnboardingMealIds]    = useState<string[]>(['cafe','almoco','lanche','jantar','ceia'])
+  const [customCalGoal,        setCustomCalGoal]        = useState('')
 
   // ── Setup gate ───────────────────────────────────────────────────────────────
   // Sugestão de regerar dieta quando meta calórica muda
@@ -575,7 +577,7 @@ export default function Home() {
   const [calcObjetivo,  setCalcObjetivo]  = useState<'emagrecer'|'manter'|'ganhar'>('emagrecer')
   const [calcResult,    setCalcResult]    = useState<CalcResult | null>(null)
   const [calcGordura,   setCalcGordura]   = useState('')   // % gordura para Katch-McArdle
-  const [calcDeficit,   setCalcDeficit]   = useState<'leve'|'mod'|'agr'|null>(null)
+  const [calcDeficit,   setCalcDeficit]   = useState<'leve'|'mod'|'agr'|'custom'|null>(null)
   const [showBio,       setShowBio]       = useState(false)
   const bioFileRef = useRef<HTMLInputElement>(null)
 
@@ -1287,7 +1289,7 @@ export default function Home() {
     const ng = { ...userGoals, cals }
     setUserGoals(ng)
     save({ userGoals: ng })
-    // Tela dedicada de onboarding: avança para passo 2 sem sair da tela
+    // Tela dedicada de onboarding: avança para passo 2 (escolha de refeições) sem sair da tela
     if (onboardingScreen) {
       setOnboardingScreenStep(2)
       return
@@ -1304,7 +1306,7 @@ export default function Home() {
   const handleGenerateDiet = () => {
     const target = parseInt(dietTarget)
     if (!target || target < 500) return
-    setGeneratedDiet(generateDiet(target, dietBudget))
+    setGeneratedDiet(generateDiet(target, dietBudget, onboardingScreen ? onboardingMealIds : undefined))
   }
 
   const openDietSubModal = (mealIdx: number, itemIdx: number) => {
@@ -1574,12 +1576,18 @@ export default function Home() {
               {onboardingScreenStep > 1 ? '✓' : '1'}
             </div>
             <div className={`onb-step-connector ${onboardingScreenStep > 1 ? 'done' : ''}`} />
-            <div className={`onb-step-dot ${onboardingScreenStep >= 2 ? 'active' : ''}`}>2</div>
+            <div className={`onb-step-dot ${onboardingScreenStep >= 2 ? 'active' : ''} ${onboardingScreenStep > 2 ? 'done' : ''}`}>
+              {onboardingScreenStep > 2 ? '✓' : '2'}
+            </div>
+            <div className={`onb-step-connector ${onboardingScreenStep > 2 ? 'done' : ''}`} />
+            <div className={`onb-step-dot ${onboardingScreenStep >= 3 ? 'active' : ''}`}>3</div>
           </div>
           <div className="onb-step-subtitle">
             {onboardingScreenStep === 1
               ? 'Passo 1 — Calcule sua meta calórica'
-              : 'Passo 2 — Gere sua dieta personalizada'}
+              : onboardingScreenStep === 2
+              ? 'Passo 2 — Escolha suas refeições'
+              : 'Passo 3 — Gere sua dieta personalizada'}
           </div>
         </div>
 
@@ -1634,13 +1642,22 @@ export default function Home() {
               </div>
               <div className="calc-field" style={{ marginTop:10 }}>
                 <label className="calc-label">Nível de Atividade</label>
-                <select className="login-input" value={calcAtividade} onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
-                  <option value="sed">Sedentário — pouco ou nenhum exercício</option>
-                  <option value="leve">Leve — exercício 1–3×/semana</option>
-                  <option value="mod">Moderado — exercício 3–5×/semana</option>
-                  <option value="int">Intenso — exercício 5–7×/semana</option>
-                  <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
-                </select>
+                <div className="activity-grid">
+                  {([
+                    { v:'sed',   label:'Sedentário',   desc:'sem exercício' },
+                    { v:'leve',  label:'Leve',          desc:'1–3×/sem' },
+                    { v:'mod',   label:'Moderado',      desc:'3–5×/sem' },
+                    { v:'int',   label:'Intenso',       desc:'5–7×/sem' },
+                    { v:'muito', label:'Muito Intenso', desc:'atleta' },
+                  ] as const).map(({ v, label, desc }) => (
+                    <button key={v}
+                      className={`activity-btn ${calcAtividade === v ? 'active' : ''}`}
+                      onClick={() => setCalcAtividade(v)}>
+                      <span className="activity-btn-label">{label}</span>
+                      <span className="activity-btn-desc">{desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="calc-field" style={{ marginTop:10 }}>
                 <label className="calc-label">Objetivo Principal</label>
@@ -1715,20 +1732,40 @@ export default function Home() {
                             </button>
                           )
                         })}
+                        <button
+                          className={`deficit-btn ${calcDeficit === 'custom' ? 'active' : ''}`}
+                          onClick={() => setCalcDeficit('custom')}>
+                          <div className="deficit-btn-label">Meta própria</div>
+                          <div className="deficit-btn-cals">—</div>
+                          <div className="deficit-btn-desc">Personalizado</div>
+                        </button>
                       </div>
+                      {calcDeficit === 'custom' && (
+                        <div className="custom-goal-row">
+                          <input type="number" className="login-input" style={{ flex:1 }}
+                            value={customCalGoal} onChange={e => setCustomCalGoal(e.target.value)}
+                            placeholder="Ex: 1500" />
+                          <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {/* Botão único Usar → */}
                   <button
                     className="btn"
                     style={{ marginTop:14, width:'100%' }}
-                    disabled={calcObjetivo !== 'manter' && calcDeficit === null}
+                    disabled={
+                      (calcObjetivo !== 'manter' && calcDeficit === null) ||
+                      (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < 500))
+                    }
                     onClick={() => {
                       if (calcObjetivo === 'manter') {
                         useDietCals(calcResult.manter, 'manter')
+                      } else if (calcDeficit === 'custom') {
+                        useDietCals(parseInt(customCalGoal), calcObjetivo)
                       } else {
                         const pcts = { leve:10, mod:15, agr:20 }
-                        const pct  = pcts[calcDeficit!]
+                        const pct  = pcts[calcDeficit as 'leve'|'mod'|'agr']
                         const cals = calcObjetivo === 'emagrecer'
                           ? Math.round(calcResult.tdee * (1 - pct / 100))
                           : Math.round(calcResult.tdee * (1 + pct / 100))
@@ -1742,8 +1779,54 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── Passo 2: Gerar Dieta ── */}
+          {/* ── Passo 2: Escolha de Refeições ── */}
           {onboardingScreenStep === 2 && (
+            <div className="onb-step-content">
+              <p className="onb-meal-intro">Quais refeições você faz no dia a dia?</p>
+              <div className="meal-checkbox-list">
+                {([
+                  { id:'cafe',         label:'Café da Manhã',   desc:'manhã cedo' },
+                  { id:'lanche_manha', label:'Lanche da Manhã', desc:'meio da manhã' },
+                  { id:'almoco',       label:'Almoço',           desc:'hora do almoço' },
+                  { id:'lanche',       label:'Lanche da Tarde',  desc:'meio da tarde' },
+                  { id:'jantar',       label:'Jantar',           desc:'à noite' },
+                  { id:'ceia',         label:'Ceia',             desc:'antes de dormir' },
+                ] as const).map(({ id, label, desc }) => {
+                  const checked = onboardingMealIds.includes(id)
+                  return (
+                    <label key={id} className={`meal-checkbox-item ${checked ? 'checked' : ''}`}>
+                      <input type="checkbox" checked={checked} onChange={() => {
+                        setOnboardingMealIds(prev =>
+                          checked
+                            ? prev.filter(m => m !== id)
+                            : [...prev, id]
+                        )
+                      }} />
+                      <span className="meal-checkbox-label">{label}</span>
+                      <span className="meal-checkbox-desc">{desc}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {onboardingMealIds.length < 3 && (
+                <p className="meal-min-warn">Selecione ao menos 3 refeições</p>
+              )}
+              <div style={{ display:'flex', gap:8, marginTop:16 }}>
+                <button className="btn btn-cancel" style={{ flex:'0 0 auto' }}
+                  onClick={() => setOnboardingScreenStep(1)}>
+                  <ArrowLeft size={14}/> Voltar
+                </button>
+                <button className="btn" style={{ flex:1 }}
+                  disabled={onboardingMealIds.length < 3}
+                  onClick={() => setOnboardingScreenStep(3)}>
+                  <ArrowLeft size={14} style={{ transform:'rotate(180deg)' }}/> Continuar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Passo 3: Gerar Dieta ── */}
+          {onboardingScreenStep === 3 && (
             <div className="onb-step-content">
               <div className="calc-field" style={{ marginTop:8 }}>
                 <label className="calc-label">Meta calórica diária</label>
@@ -1760,10 +1843,16 @@ export default function Home() {
                   <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}><Coins size={14}/> Simples / Barato</button>
                 </div>
               </div>
-              <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
-                disabled={!dietTarget || parseInt(dietTarget) < 500}>
-                <Zap size={15}/> Gerar Dieta Automaticamente
-              </button>
+              <div style={{ display:'flex', gap:8, marginTop:14 }}>
+                <button className="btn btn-cancel" style={{ flex:'0 0 auto' }}
+                  onClick={() => setOnboardingScreenStep(2)}>
+                  <ArrowLeft size={14}/> Voltar
+                </button>
+                <button className="btn" style={{ flex:1 }} onClick={handleGenerateDiet}
+                  disabled={!dietTarget || parseInt(dietTarget) < 500}>
+                  <Zap size={15}/> Gerar Dieta
+                </button>
+              </div>
 
               {generatedDiet && (
                 <>
@@ -3439,13 +3528,22 @@ export default function Home() {
                 </div>
                 <div className="calc-field" style={{ marginTop:10 }}>
                   <label className="calc-label">Nível de Atividade</label>
-                  <select className="login-input" value={calcAtividade} onChange={e => setCalcAtividade(e.target.value as typeof calcAtividade)}>
-                    <option value="sed">Sedentário — pouco ou nenhum exercício</option>
-                    <option value="leve">Leve — exercício 1–3×/semana</option>
-                    <option value="mod">Moderado — exercício 3–5×/semana</option>
-                    <option value="int">Intenso — exercício 5–7×/semana</option>
-                    <option value="muito">Muito Intenso — atleta / treino 2× ao dia</option>
-                  </select>
+                  <div className="activity-grid">
+                    {([
+                      { v:'sed',   label:'Sedentário',   desc:'sem exercício' },
+                      { v:'leve',  label:'Leve',          desc:'1–3×/sem' },
+                      { v:'mod',   label:'Moderado',      desc:'3–5×/sem' },
+                      { v:'int',   label:'Intenso',       desc:'5–7×/sem' },
+                      { v:'muito', label:'Muito Intenso', desc:'atleta' },
+                    ] as const).map(({ v, label, desc }) => (
+                      <button key={v}
+                        className={`activity-btn ${calcAtividade === v ? 'active' : ''}`}
+                        onClick={() => setCalcAtividade(v)}>
+                        <span className="activity-btn-label">{label}</span>
+                        <span className="activity-btn-desc">{desc}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="calc-field" style={{ marginTop:10 }}>
                   <label className="calc-label">Objetivo Principal</label>
@@ -3520,20 +3618,40 @@ export default function Home() {
                               </button>
                             )
                           })}
+                          <button
+                            className={`deficit-btn ${calcDeficit === 'custom' ? 'active' : ''}`}
+                            onClick={() => setCalcDeficit('custom')}>
+                            <div className="deficit-btn-label">Meta própria</div>
+                            <div className="deficit-btn-cals">—</div>
+                            <div className="deficit-btn-desc">Personalizado</div>
+                          </button>
                         </div>
+                        {calcDeficit === 'custom' && (
+                          <div className="custom-goal-row">
+                            <input type="number" className="login-input" style={{ flex:1 }}
+                              value={customCalGoal} onChange={e => setCustomCalGoal(e.target.value)}
+                              placeholder="Ex: 1500" />
+                            <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
+                          </div>
+                        )}
                       </div>
                     )}
                     {/* Botão único Usar → */}
                     <button
                       className="btn"
                       style={{ marginTop:14, width:'100%' }}
-                      disabled={calcObjetivo !== 'manter' && calcDeficit === null}
+                      disabled={
+                        (calcObjetivo !== 'manter' && calcDeficit === null) ||
+                        (calcDeficit === 'custom' && (!customCalGoal || parseInt(customCalGoal) < 500))
+                      }
                       onClick={() => {
                         if (calcObjetivo === 'manter') {
                           useDietCals(calcResult.manter, 'manter')
+                        } else if (calcDeficit === 'custom') {
+                          useDietCals(parseInt(customCalGoal), calcObjetivo)
                         } else {
                           const pcts = { leve:10, mod:15, agr:20 }
-                          const pct  = pcts[calcDeficit!]
+                          const pct  = pcts[calcDeficit as 'leve'|'mod'|'agr']
                           const cals = calcObjetivo === 'emagrecer'
                             ? Math.round(calcResult.tdee * (1 - pct / 100))
                             : Math.round(calcResult.tdee * (1 + pct / 100))
