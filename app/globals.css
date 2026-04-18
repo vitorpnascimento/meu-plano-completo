@@ -3880,3 +3880,89 @@ html.dark .meal-add-btn { background: rgba(99,102,241,0.12); }
   letter-spacing: 0.02em;
 }
 html.dark .taco-custom-badge { background: rgba(99,102,241,0.18); }
+
+/* ── Modal Meus Alimentos ─────────────────────────────────────── */
+.my-foods-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.my-foods-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 24px 16px;
+  line-height: 1.5;
+}
+
+.my-foods-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+}
+
+.my-foods-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.my-foods-info { flex: 1; min-width: 0; }
+
+.my-foods-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.my-foods-macros {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.my-foods-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.my-foods-delete-btn {
+  color: var(--error) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px !important;
+}
+.my-foods-delete-btn:hover { background: rgba(239,68,68,0.08) !important; }
+
+.my-foods-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.my-foods-confirm-text {
+  font-size: 11px;
+  color: var(--error);
+  text-align: right;
+  max-width: 160px;
+  line-height: 1.3;
+}
+
+html.dark .my-foods-item { background: #16213E; border-color: #2D2D4E; }

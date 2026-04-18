@@ -12,7 +12,7 @@ import {
   TrendingUp, TrendingDown, Minus as MinusIcon,
   Dumbbell, Lightbulb, ChevronDown, Trophy,
   AlertTriangle, Plus as PlusIcon, Radio, Upload,
-  Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical,
+  Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical, BookMarked,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -608,19 +608,22 @@ function SortableItemBlock({ item, onEdit, onDelete }: SortableItemBlockProps) {
 // ─── SortableMealBlock ─────────────────────────────────────────────────────────
 
 interface SortableMealBlockProps {
-  meal:           Meal
-  mealIdx:        number
-  dndSensors:     ReturnType<typeof useSensors>
-  onEditItem:     (item: MealItem) => void
-  onDeleteItem:   (itemId: string) => void
-  onAddManual:    () => void
-  onSearchTACO:   () => void
-  onItemsReorder: (newItems: MealItem[]) => void
+  meal:             Meal
+  mealIdx:          number
+  dndSensors:       ReturnType<typeof useSensors>
+  onEditItem:       (item: MealItem) => void
+  onDeleteItem:     (itemId: string) => void
+  onAddManual:      () => void
+  onSearchTACO:     () => void
+  onItemsReorder:   (newItems: MealItem[]) => void
+  onOpenMyFoods:    () => void
+  hasCustomFoods:   boolean
 }
 
 function SortableMealBlock({
   meal, mealIdx: _mealIdx, dndSensors,
   onEditItem, onDeleteItem, onAddManual, onSearchTACO, onItemsReorder,
+  onOpenMyFoods, hasCustomFoods,
 }: SortableMealBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id })
   const style: React.CSSProperties = {
@@ -675,6 +678,11 @@ function SortableMealBlock({
       </DndContext>
       <div style={{ display:'flex', gap:6, marginTop:8 }}>
         <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onAddManual}>+ Adicionar manual</button>
+        {hasCustomFoods && (
+          <button className="config-reset-btn my-foods-btn" style={{ flex:1, textAlign:'center' }} onClick={onOpenMyFoods}>
+            <BookMarked size={13}/> Meus Alimentos
+          </button>
+        )}
         <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onSearchTACO}><Search size={13}/> Buscar TACO</button>
       </div>
     </div>
@@ -757,6 +765,12 @@ export default function Home() {
   const [customFoods,         setCustomFoods]         = useState<CustomFood[]>([])
   const [tacoCustomSelected,  setTacoCustomSelected]  = useState<CustomFood | null>(null)
   const [tacoCustomPorcao,    setTacoCustomPorcao]    = useState('')
+
+  // ── Modal Meus Alimentos ──────────────────────────────────────────────────────
+  const [showMyFoods,          setShowMyFoods]          = useState(false)
+  const [myFoodsMealIdx,       setMyFoodsMealIdx]       = useState(0)
+  const [myFoodsQuery,         setMyFoodsQuery]         = useState('')
+  const [myFoodsDeleteConfirm, setMyFoodsDeleteConfirm] = useState<string | null>(null)
 
   // ── Import Modal ─────────────────────────────────────────────────────────────
   const [showImport,    setShowImport]    = useState(false)
@@ -4332,6 +4346,13 @@ export default function Home() {
                         onAddManual={() => openItemModal('add', mealIdx)}
                         onSearchTACO={() => openTACO(mealIdx)}
                         onItemsReorder={newItems => handleItemsReorder(meal.id, newItems)}
+                        hasCustomFoods={customFoods.length > 0}
+                        onOpenMyFoods={() => {
+                          setMyFoodsMealIdx(mealIdx)
+                          setMyFoodsQuery('')
+                          setMyFoodsDeleteConfirm(null)
+                          setShowMyFoods(true)
+                        }}
                       />
                     ))}
                   </SortableContext>
@@ -4402,6 +4423,128 @@ export default function Home() {
               setSuggestRegen(false)
             }}>
               Gerar nova dieta
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Meus Alimentos ══ */}
+      {showMyFoods && (
+        <div className="modal-overlay" onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null) }}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <BookMarked size={16}/> Meus Alimentos
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label className="config-goal-label" style={{ marginBottom: 6 }}>Adicionar em:</label>
+              <select
+                className="login-input"
+                value={myFoodsMealIdx}
+                onChange={e => setMyFoodsMealIdx(Number(e.target.value))}
+              >
+                {meals.map((m, i) => <option key={m.id} value={i}>{m.title}</option>)}
+              </select>
+            </div>
+
+            <input
+              type="text"
+              className="login-input"
+              placeholder="Buscar na biblioteca..."
+              value={myFoodsQuery}
+              autoFocus
+              onChange={e => { setMyFoodsQuery(e.target.value); setMyFoodsDeleteConfirm(null) }}
+              style={{ marginBottom: 10 }}
+            />
+
+            {(() => {
+              const q = myFoodsQuery.trim().toLowerCase()
+              const filtered = q.length >= 1
+                ? customFoods.filter(cf => cf.name.toLowerCase().includes(q))
+                : customFoods
+              if (filtered.length === 0) {
+                return (
+                  <div className="my-foods-empty">
+                    {customFoods.length === 0
+                      ? 'Nenhum alimento salvo ainda. Adicione alimentos manualmente e eles aparecerão aqui.'
+                      : 'Nenhum alimento encontrado.'}
+                  </div>
+                )
+              }
+              return (
+                <div className="my-foods-list">
+                  {filtered.map(cf => (
+                    <div key={cf.id} className="my-foods-item">
+                      <div className="my-foods-info">
+                        <div className="my-foods-name">{cf.name}</div>
+                        <div className="my-foods-macros">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g · {cf.grams}g</div>
+                      </div>
+                      <div className="my-foods-actions">
+                        {myFoodsDeleteConfirm === cf.id ? (
+                          <div className="my-foods-confirm">
+                            <span className="my-foods-confirm-text">Remover {cf.name} da sua biblioteca?</span>
+                            <button
+                              className="config-reset-btn"
+                              style={{ color: 'var(--error)', fontSize: 11 }}
+                              onClick={() => {
+                                const updated = customFoods.filter(f => f.id !== cf.id)
+                                setCustomFoods(updated)
+                                save({ customFoods: updated })
+                                setMyFoodsDeleteConfirm(null)
+                              }}
+                            >
+                              Remover
+                            </button>
+                            <button
+                              className="config-reset-btn"
+                              style={{ fontSize: 11 }}
+                              onClick={() => setMyFoodsDeleteConfirm(null)}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <button
+                              className="config-reset-btn"
+                              style={{ fontSize: 11, color: 'var(--primary)' }}
+                              onClick={() => {
+                                const item: MealItem = {
+                                  id:   newId(),
+                                  name: cf.name,
+                                  kcal: cf.kcal,
+                                  p:    cf.p,
+                                  c:    cf.c,
+                                  f:    cf.f,
+                                }
+                                const nm = meals.map((m, mi) => mi !== myFoodsMealIdx ? m : { ...m, items: [...m.items, item] })
+                                setMeals(nm); save({ meals: nm }); setShowMyFoods(false)
+                              }}
+                            >
+                              Adicionar
+                            </button>
+                            <button
+                              className="config-reset-btn my-foods-delete-btn"
+                              title="Remover da biblioteca"
+                              onClick={() => setMyFoodsDeleteConfirm(cf.id)}
+                            >
+                              <Trash2 size={13}/>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+
+            <button
+              className="btn btn-cancel"
+              style={{ marginTop: 14 }}
+              onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null) }}
+            >
+              Fechar
             </button>
           </div>
         </div>
