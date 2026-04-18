@@ -3844,3 +3844,36 @@ html.dark .refeicao-toast { background: #16213E; border-color: var(--success); }
 
 html.dark .meal-manage-item { background: #0F0F1F; border-color: #2D2D4E; }
 html.dark .meal-add-btn { background: rgba(99,102,241,0.12); }
+
+/* ── Drag handle (reordenar refeições) ───────────────────────────────────── */
+.meal-drag-handle {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  touch-action: none;
+  transition: color 0.15s;
+}
+.meal-drag-handle:hover { color: var(--primary); }
+.meal-drag-handle:active { cursor: grabbing; }
+
+/* ── Badge "Meu alimento" na busca TACO ─────────────────────────────────── */
+.taco-custom-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+  margin-left: 6px;
+  letter-spacing: 0.02em;
+}
+html.dark .taco-custom-badge { background: rgba(99,102,241,0.18); }

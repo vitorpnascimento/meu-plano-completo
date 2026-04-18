@@ -12,8 +12,17 @@ import {
   TrendingUp, TrendingDown, Minus as MinusIcon,
   Dumbbell, Lightbulb, ChevronDown, Trophy,
   AlertTriangle, Plus as PlusIcon, Radio, Upload,
-  Search, Zap, Bot, Flame, Coins, Sparkles,
+  Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical,
 } from 'lucide-react'
+import {
+  DndContext, closestCenter, PointerSensor, TouchSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { User } from 'firebase/auth'
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, ComposedChart,
@@ -60,6 +69,16 @@ interface SubOption {
   p:    number
   c:    number
   f:    number
+}
+
+interface CustomFood {
+  id:    string
+  name:  string
+  kcal:  number
+  p:     number
+  c:     number
+  f:     number
+  grams: number  // tamanho da porção padrão
 }
 
 interface WeightEntry {
@@ -533,6 +552,84 @@ function SyncIcon({ status }: { status: SyncStatus }) {
   return null
 }
 
+/** Adiciona alimento à biblioteca pessoal sem duplicar por nome. Puro — sem side effects. */
+function addFoodToLibrary(
+  current: CustomFood[],
+  item: { name: string; kcal: number; p: number; c: number; f: number },
+  grams = 100,
+): CustomFood[] {
+  const name = item.name.trim()
+  if (!name || current.some(cf => cf.name.toLowerCase() === name.toLowerCase())) return current
+  return [
+    ...current,
+    { id: newId(), name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, grams },
+  ]
+}
+
+/** Pesquisa na biblioteca pessoal por correspondência simples (case-insensitive). */
+function searchCustomFoods(query: string, foods: CustomFood[]): CustomFood[] {
+  if (!query || query.trim().length < 2) return []
+  const q = query.toLowerCase()
+  return foods.filter(f => f.name.toLowerCase().includes(q))
+}
+
+// ─── SortableMealBlock ─────────────────────────────────────────────────────────
+
+interface SortableMealBlockProps {
+  meal:          Meal
+  mealIdx:       number
+  onEditItem:    (item: MealItem) => void
+  onDeleteItem:  (itemId: string) => void
+  onAddManual:   () => void
+  onSearchTACO:  () => void
+}
+
+function SortableMealBlock({ meal, mealIdx: _mealIdx, onEditItem, onDeleteItem, onAddManual, onSearchTACO }: SortableMealBlockProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+    marginBottom: 20,
+  }
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+        <button
+          className="meal-drag-handle"
+          {...attributes}
+          {...listeners}
+          tabIndex={-1}
+          title="Arrastar para reordenar"
+        >
+          <GripVertical size={15}/>
+        </button>
+        <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)' }}>
+          {meal.title} · ~{(meal.items ?? []).reduce((s, it) => s + it.kcal, 0)} kcal
+        </div>
+      </div>
+      {(meal.items ?? []).map(item => (
+        <div key={item.id} className="config-item-row">
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
+            <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            <button className="config-reset-btn" onClick={() => onEditItem(item)}>Editar</button>
+            <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={() => onDeleteItem(item.id)}>✕</button>
+          </div>
+        </div>
+      ))}
+      <div style={{ display:'flex', gap:6, marginTop:8 }}>
+        <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onAddManual}>+ Adicionar manual</button>
+        <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onSearchTACO}><Search size={13}/> Buscar TACO</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Home ──────────────────────────────────────────────────────────────────────
+
 export default function Home() {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -597,12 +694,17 @@ export default function Home() {
   const [reportStep,    setReportStep]    = useState<'select'|'view'>('select')
 
   // ── TACO Modal ───────────────────────────────────────────────────────────────
-  const [showTACO,      setShowTACO]      = useState(false)
-  const [tacoQuery,     setTacoQuery]     = useState('')
-  const [tacoResults,   setTacoResults]   = useState<TacoFood[]>([])
-  const [tacoSelected,  setTacoSelected]  = useState<TacoFood | null>(null)
-  const [tacoPorcao,    setTacoPorcao]    = useState('100')
-  const [tacoMealIdx,   setTacoMealIdx]   = useState(0)
+  const [showTACO,            setShowTACO]            = useState(false)
+  const [tacoQuery,           setTacoQuery]           = useState('')
+  const [tacoResults,         setTacoResults]         = useState<TacoFood[]>([])
+  const [tacoSelected,        setTacoSelected]        = useState<TacoFood | null>(null)
+  const [tacoPorcao,          setTacoPorcao]          = useState('100')
+  const [tacoMealIdx,         setTacoMealIdx]         = useState(0)
+  // Biblioteca pessoal de alimentos
+  const [customFoods,         setCustomFoods]         = useState<CustomFood[]>([])
+  const [tacoCustomResults,   setTacoCustomResults]   = useState<CustomFood[]>([])
+  const [tacoCustomSelected,  setTacoCustomSelected]  = useState<CustomFood | null>(null)
+  const [tacoCustomPorcao,    setTacoCustomPorcao]    = useState('')
 
   // ── Import Modal ─────────────────────────────────────────────────────────────
   const [showImport,    setShowImport]    = useState(false)
@@ -711,6 +813,13 @@ export default function Home() {
     if (d.dayStats   && typeof d.dayStats   === 'object') setDayStats(d.dayStats)
     if (d.userGoals  && typeof d.userGoals  === 'object') setUserGoals(d.userGoals)
 
+    // customFoods: biblioteca pessoal de alimentos
+    if (Array.isArray(d.customFoods)) {
+      setCustomFoods(d.customFoods)
+    } else if (d.customFoods && typeof d.customFoods === 'object') {
+      setCustomFoods(Object.values(d.customFoods))
+    }
+
     // weightHistory: sempre objeto {date: entry}
     const wh: Record<string, any> =
       d.weightHistory && typeof d.weightHistory === 'object' ? d.weightHistory
@@ -741,6 +850,7 @@ export default function Home() {
     setDayStats({})
     setWeightsData({})
     setUserGoals(DEFAULT_GOALS)
+    setCustomFoods([])
     setSyncStatus('unconfigured')
   }, [])
 
@@ -855,7 +965,7 @@ export default function Home() {
   const save = (overrides: Record<string, any> = {}) => {
     const data = {
       meals, alternatives, activeSubs, checked, dayStats,
-      weightHistory: weightsData, userGoals,
+      weightHistory: weightsData, userGoals, customFoods,
       ...overrides,
     }
     // localStorage pode falhar em modo privado ou quando o storage estiver cheio
@@ -1026,7 +1136,15 @@ export default function Home() {
         ? m.items.map(it => it.id === saved.id ? saved : it)
         : [...m.items, saved],
     })
-    setMeals(nm); save({ meals: nm }); setItemModal(null)
+    // Salva na biblioteca pessoal quando adicionando novo alimento
+    let newCustomFoods = customFoods
+    if (itemModal.mode === 'add') {
+      newCustomFoods = addFoodToLibrary(customFoods, saved)
+      if (newCustomFoods !== customFoods) setCustomFoods(newCustomFoods)
+    }
+    setMeals(nm)
+    save({ meals: nm, customFoods: newCustomFoods })
+    setItemModal(null)
   }
 
   const deleteMealItem = (mealIdx: number, itemId: string) => {
@@ -1131,7 +1249,9 @@ export default function Home() {
   // ── Ações: TACO ─────────────────────────────────────────────────────────────
 
   const openTACO = (mealIdx = 0) => {
-    setTacoMealIdx(mealIdx); setTacoQuery(''); setTacoResults([]); setTacoSelected(null); setTacoPorcao('100'); setShowTACO(true)
+    setTacoMealIdx(mealIdx); setTacoQuery(''); setTacoResults([]); setTacoSelected(null)
+    setTacoPorcao('100'); setTacoCustomResults([]); setTacoCustomSelected(null); setTacoCustomPorcao('')
+    setShowTACO(true)
   }
 
   const addTACOItem = () => {
@@ -1230,8 +1350,11 @@ export default function Home() {
     const nm = meals.map((m, idx) =>
       idx === quickAddMeal ? { ...m, items: [...(m.items ?? []), newItem] } : m
     )
+    // Salva automaticamente na biblioteca pessoal
+    const newCustomFoods = addFoodToLibrary(customFoods, newItem)
+    if (newCustomFoods !== customFoods) setCustomFoods(newCustomFoods)
     setMeals(nm)
-    save({ meals: nm })
+    save({ meals: nm, customFoods: newCustomFoods })
     setQuickAddName('')
     setQuickAddKcal('')
     setQuickAddP('')
@@ -1369,6 +1492,24 @@ export default function Home() {
     setConfigSections(s => ({ ...s, dieta: true, calc: false }))
     // Avança onboarding: calc → dieta
     if (onboardingStep === 2) setOnboardingStep(3)
+  }
+
+  // ── DnD: reordenar refeições ─────────────────────────────────────────────────
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor,   { activationConstraint: { delay: 250, tolerance: 5 } }),
+  )
+
+  const handleMealDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = meals.findIndex(m => m.id === active.id)
+    const newIndex = meals.findIndex(m => m.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const reordered = arrayMove(meals, oldIndex, newIndex)
+    setMeals(reordered)
+    save({ meals: reordered })
   }
 
   // ── Ações: Gerenciar Refeições ───────────────────────────────────────────────
@@ -2412,19 +2553,41 @@ export default function Home() {
                 const q = e.target.value
                 setTacoQuery(q)
                 setTacoResults(q.trim().length >= 2 ? searchTACO(q) : [])
+                setTacoCustomResults(searchCustomFoods(q, customFoods))
                 if (tacoSelected && !q.toLowerCase().includes(tacoSelected.nome.split(' ')[0].toLowerCase())) {
                   setTacoSelected(null)
                 }
+                if (tacoCustomSelected) setTacoCustomSelected(null)
               }}
             />
 
-            {tacoResults.length > 0 && !tacoSelected && (
+            {(tacoCustomResults.length > 0 || tacoResults.length > 0) && !tacoSelected && !tacoCustomSelected && (
               <div className="taco-results">
+                {/* Meus alimentos — aparecem primeiro */}
+                {tacoCustomResults.map(cf => (
+                  <button
+                    key={cf.id}
+                    className="taco-result-item"
+                    onClick={() => {
+                      setTacoCustomSelected(cf)
+                      setTacoCustomPorcao(String(cf.grams))
+                      setTacoResults([])
+                      setTacoCustomResults([])
+                    }}
+                  >
+                    <div className="taco-result-name">
+                      {cf.name}
+                      <span className="taco-custom-badge">Meu alimento</span>
+                    </div>
+                    <div className="taco-result-cat">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g</div>
+                  </button>
+                ))}
+                {/* Resultados TACO */}
                 {tacoResults.map(food => (
                   <button
                     key={food.id}
                     className="taco-result-item"
-                    onClick={() => { setTacoSelected(food); setTacoResults([]) }}
+                    onClick={() => { setTacoSelected(food); setTacoResults([]); setTacoCustomResults([]) }}
                   >
                     <div className="taco-result-name">{food.nome}</div>
                     <div className="taco-result-cat">{food.cat} · {food.kcal} kcal/100g · P{food.p}g · C{food.c}g · G{food.f}g</div>
@@ -2433,6 +2596,70 @@ export default function Home() {
               </div>
             )}
 
+            {/* Alimento pessoal selecionado */}
+            {tacoCustomSelected && (
+              <div className="taco-calc-preview">
+                <div className="taco-calc-name">
+                  {tacoCustomSelected.name}
+                  <span className="taco-custom-badge" style={{ marginLeft: 8 }}>Meu alimento</span>
+                </div>
+                <div className="taco-calc-cat">Porção padrão: {tacoCustomSelected.grams}g</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '10px 0' }}>
+                  <input
+                    type="number"
+                    className="login-input"
+                    style={{ width: 100, textAlign: 'center' }}
+                    value={tacoCustomPorcao}
+                    min={1}
+                    onChange={e => setTacoCustomPorcao(e.target.value)}
+                  />
+                  <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>gramas</span>
+                </div>
+                {(() => {
+                  const g     = parseFloat(tacoCustomPorcao) || tacoCustomSelected.grams
+                  const ratio = tacoCustomSelected.grams > 0 ? g / tacoCustomSelected.grams : 1
+                  return (
+                    <div className="taco-calc-macros">
+                      <span><Flame size={13}/> {Math.round(tacoCustomSelected.kcal * ratio)} kcal</span>
+                      <span>P {+(tacoCustomSelected.p * ratio).toFixed(1)}g</span>
+                      <span>C {+(tacoCustomSelected.c * ratio).toFixed(1)}g</span>
+                      <span>G {+(tacoCustomSelected.f * ratio).toFixed(1)}g</span>
+                    </div>
+                  )
+                })()}
+                <button
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  disabled={!tacoCustomPorcao || parseFloat(tacoCustomPorcao) <= 0}
+                  onClick={() => {
+                    const g     = parseFloat(tacoCustomPorcao) || tacoCustomSelected.grams
+                    const ratio = tacoCustomSelected.grams > 0 ? g / tacoCustomSelected.grams : 1
+                    const item: MealItem = {
+                      id:   newId(),
+                      name: tacoCustomSelected.name,
+                      kcal: Math.round(tacoCustomSelected.kcal * ratio),
+                      p:    +(tacoCustomSelected.p * ratio).toFixed(1),
+                      c:    +(tacoCustomSelected.c * ratio).toFixed(1),
+                      f:    +(tacoCustomSelected.f * ratio).toFixed(1),
+                    }
+                    const nm = meals.map((m, mi) => mi !== tacoMealIdx ? m : { ...m, items: [...m.items, item] })
+                    setMeals(nm); save({ meals: nm }); setShowTACO(false)
+                    setTacoCustomSelected(null)
+                  }}
+                >
+                  <CheckCircle2 size={14}/> Adicionar a {meals[tacoMealIdx]?.title}
+                </button>
+                <button
+                  className="btn btn-cancel"
+                  style={{ marginTop: 6 }}
+                  onClick={() => { setTacoCustomSelected(null); setTacoQuery(''); setTacoCustomResults([]) }}
+                >
+                  ← Buscar outro
+                </button>
+              </div>
+            )}
+
+            {/* Alimento TACO selecionado */}
             {tacoSelected && (
               <div className="taco-calc-preview">
                 <div className="taco-calc-name">{tacoSelected.nome}</div>
@@ -4024,31 +4251,25 @@ export default function Home() {
                   </button>
                 </div>
 
-                {meals.map((meal, mealIdx) => (
-                  <div key={meal.id} style={{ marginBottom:20 }}>
-                    <div style={{ fontSize:13, fontWeight:700, color:'var(--primary)', marginBottom:8 }}>
-                      {meal.title} · ~{(meal.items ?? []).reduce((s,it)=>s+it.kcal,0)} kcal
-                    </div>
-                    {(meal.items ?? []).map(item => (
-                      <div key={item.id} className="config-item-row">
-                        <div style={{ flex:1 }}>
-                          <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
-                          <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
-                        </div>
-                        <div style={{ display:'flex', gap:6 }}>
-                          <button className="config-reset-btn" onClick={() => openItemModal('edit', mealIdx, item)}>Editar</button>
-                          <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={() => deleteMealItem(mealIdx, item.id)}>✕</button>
-                        </div>
-                      </div>
+                <DndContext
+                  sensors={dndSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleMealDragEnd}
+                >
+                  <SortableContext items={meals.map(m => m.id)} strategy={verticalListSortingStrategy}>
+                    {meals.map((meal, mealIdx) => (
+                      <SortableMealBlock
+                        key={meal.id}
+                        meal={meal}
+                        mealIdx={mealIdx}
+                        onEditItem={item => openItemModal('edit', mealIdx, item)}
+                        onDeleteItem={itemId => deleteMealItem(mealIdx, itemId)}
+                        onAddManual={() => openItemModal('add', mealIdx)}
+                        onSearchTACO={() => openTACO(mealIdx)}
+                      />
                     ))}
-                    <div style={{ display:'flex', gap:6, marginTop:8 }}>
-                      <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                        onClick={() => openItemModal('add', mealIdx)}>+ Adicionar manual</button>
-                      <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }}
-                        onClick={() => openTACO(mealIdx)}><Search size={13}/> Buscar TACO</button>
-                    </div>
-                  </div>
-                ))}
+                  </SortableContext>
+                </DndContext>
               </div>
             )}
           </div>
