@@ -154,6 +154,25 @@ const NEW_USER_MEALS: Meal[] = [
   { id: 'ceia',   title: 'Ceia',          items: [] },
 ]
 
+/** Todas as refeições disponíveis para seleção (onboarding + gerenciamento) */
+const ALL_MEAL_OPTIONS = [
+  { id: 'cafe',         label: 'Café da Manhã',  desc: 'manhã cedo'       },
+  { id: 'lanche_manha', label: 'Lanche da Manhã', desc: 'meio da manhã'   },
+  { id: 'almoco',       label: 'Almoço',          desc: 'hora do almoço'  },
+  { id: 'lanche',       label: 'Lanche da Tarde', desc: 'meio da tarde'   },
+  { id: 'jantar',       label: 'Jantar',          desc: 'à noite'         },
+  { id: 'ceia',         label: 'Ceia',            desc: 'antes de dormir' },
+] as const
+
+/** Participação calórica de cada refeição (usada na redistribuição ao adicionar/remover) */
+const MEAL_CAL_SHARES: Record<string, number> = {
+  cafe: 0.20, lanche_manha: 0.10, almoco: 0.35,
+  lanche: 0.15, jantar: 0.25, ceia: 0.05,
+}
+
+/** Ordem canônica das refeições */
+const MEAL_ORDER = ['cafe', 'lanche_manha', 'almoco', 'lanche', 'jantar', 'ceia']
+
 const DEFAULT_ALTERNATIVES: Record<string, SubOption[]> = {
   cafe_ovo:       [{ id:'ca1', name:'Iogurte grego (165g)',    kcal:167, p:20,  c:6,  f:4  }, { id:'ca2', name:'Leite + Aveia',          kcal:200, p:9,   c:32, f:4  }],
   cafe_pao:       [{ id:'cp1', name:'Biscoito integral (50g)', kcal:190, p:4,   c:36, f:3  }, { id:'cp2', name:'Bolo integral (50g)',     kcal:155, p:3,   c:30, f:2  }],
@@ -216,6 +235,23 @@ function computeMacros(targetCals: number, pesoKg: number): { p: number; c: numb
 
 /** Mínimo de calorias seguro para geração/cálculo de dieta. */
 const MIN_SAFE_CALS = 1000
+
+/** Escala todos os itens de uma refeição proporcionalmente para atingir targetKcal. */
+function scaleMealItems(meal: Meal, targetKcal: number): Meal {
+  const currentKcal = meal.items.reduce((s, it) => s + it.kcal, 0)
+  if (currentKcal === 0 || targetKcal === currentKcal) return meal
+  const ratio = targetKcal / currentKcal
+  return {
+    ...meal,
+    items: meal.items.map(it => ({
+      ...it,
+      kcal: Math.round(it.kcal * ratio),
+      p:    +(it.p * ratio).toFixed(1),
+      c:    +(it.c * ratio).toFixed(1),
+      f:    +(it.f * ratio).toFixed(1),
+    })),
+  }
+}
 
 function dateLabel(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
@@ -531,6 +567,10 @@ export default function Home() {
   const [onboardingScreenStep, setOnboardingScreenStep] = useState<1|2|3>(1)
   const [onboardingMealIds,    setOnboardingMealIds]    = useState<string[]>([])
   const [customCalGoal,        setCustomCalGoal]        = useState('')
+
+  // ── Gerenciar refeições ──────────────────────────────────────────────────────
+  const [refeicaoToast,   setRefeicaoToast]   = useState(false)
+  const [mealManageWarn,  setMealManageWarn]  = useState(false)
 
   // ── Setup gate ───────────────────────────────────────────────────────────────
   // Sugestão de regerar dieta quando meta calórica muda
@@ -1329,6 +1369,65 @@ export default function Home() {
     setConfigSections(s => ({ ...s, dieta: true, calc: false }))
     // Avança onboarding: calc → dieta
     if (onboardingStep === 2) setOnboardingStep(3)
+  }
+
+  // ── Ações: Gerenciar Refeições ───────────────────────────────────────────────
+
+  const handleRemoveMeal = (mealId: string) => {
+    if (meals.length <= 3) {
+      setMealManageWarn(true)
+      setTimeout(() => setMealManageWarn(false), 2500)
+      return
+    }
+    const remaining = meals.filter(m => m.id !== mealId)
+    const total     = userGoals.cals
+    const totalShare = remaining.reduce((s, m) => s + (MEAL_CAL_SHARES[m.id] ?? 0.15), 0)
+    const updated = remaining.map(m => {
+      const share = MEAL_CAL_SHARES[m.id] ?? 0.15
+      return scaleMealItems(m, Math.round(total * share / totalShare))
+    })
+    setMeals(updated)
+    save({ meals: updated })
+    setRefeicaoToast(true)
+    setTimeout(() => setRefeicaoToast(false), 3000)
+  }
+
+  const handleAddMeal = (mealId: string) => {
+    if (meals.length >= 6) return
+    const option = ALL_MEAL_OPTIONS.find(o => o.id === mealId)
+    if (!option) return
+    const total      = userGoals.cals
+    const allIds     = [...meals.map(m => m.id), mealId]
+    const totalShare = allIds.reduce((s, id) => s + (MEAL_CAL_SHARES[id] ?? 0.15), 0)
+    // Rescale existing meals
+    const rescaled = meals.map(m => {
+      const share = MEAL_CAL_SHARES[m.id] ?? 0.15
+      return scaleMealItems(m, Math.round(total * share / totalShare))
+    })
+    // Generate items for the new meal
+    const newMealKcal = Math.round(total * (MEAL_CAL_SHARES[mealId] ?? 0.15) / totalShare)
+    const macroTargets = (userGoals.p > 0 && userGoals.c > 0 && userGoals.f > 0)
+      ? { p: userGoals.p, c: userGoals.c, f: userGoals.f } : undefined
+    const generated = generateDiet(newMealKcal, dietBudget, [mealId], macroTargets)
+    const newMealItems: MealItem[] = generated.length > 0
+      ? generated[0].items.map(gi => {
+          const unitInfo = FOOD_UNITS[gi.food.id]
+          const unitQty  = unitInfo ? Math.max(1, Math.round(gi.grams / unitInfo.unitWeight)) : undefined
+          return {
+            id: newId(), name: formatTacoItemName(gi.food, gi.grams),
+            kcal: gi.kcal, p: gi.p, c: gi.c, f: gi.f,
+            ...(unitQty !== undefined ? { unitQty } : {}),
+          }
+        })
+      : []
+    const newMeal: Meal = { id: mealId, title: option.label, items: newMealItems }
+    const sorted = [...rescaled, newMeal].sort(
+      (a, b) => MEAL_ORDER.indexOf(a.id) - MEAL_ORDER.indexOf(b.id)
+    )
+    setMeals(sorted)
+    save({ meals: sorted })
+    setRefeicaoToast(true)
+    setTimeout(() => setRefeicaoToast(false), 3000)
   }
 
   // ── Ações: Gerar Dieta ────────────────────────────────────────────────────────
@@ -3503,6 +3602,56 @@ export default function Home() {
             )}
           </div>
 
+          {/* ── Seção: Minhas Refeições ── */}
+          <div className="config-section">
+            <div className="config-section-header" onClick={() => toggleConfigSection('refeicoes')}>
+              <div className="config-section-title-group">
+                <span className="config-section-label"><Utensils size={15}/> Minhas Refeições</span>
+                <span className="config-section-desc">{meals.length} refeição{meals.length !== 1 ? 'ões' : ''} ativa{meals.length !== 1 ? 's' : ''}</span>
+              </div>
+              <ChevronDown size={15} className={`config-section-arrow ${configSections.refeicoes ? 'open' : ''}`} />
+            </div>
+            {configSections.refeicoes && (
+              <div className="config-section-body">
+                <div className="meals-manage-list">
+                  {meals.map(meal => (
+                    <div key={meal.id} className="meal-manage-item">
+                      <span className="meal-manage-name">{meal.title}</span>
+                      <button
+                        className="meal-manage-remove-btn"
+                        onClick={() => handleRemoveMeal(meal.id)}
+                        title="Remover refeição"
+                        aria-label={`Remover ${meal.title}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {mealManageWarn && (
+                  <p className="meal-manage-warn">Mínimo de 3 refeições necessário</p>
+                )}
+                {(() => {
+                  const activeMealIds = meals.map(m => m.id)
+                  const available = ALL_MEAL_OPTIONS.filter(o => !activeMealIds.includes(o.id))
+                  if (available.length === 0 || meals.length >= 6) return null
+                  return (
+                    <div className="meal-add-row">
+                      <span className="meal-add-label">Adicionar:</span>
+                      <div className="meal-add-btns">
+                        {available.map(opt => (
+                          <button key={opt.id} className="meal-add-btn" onClick={() => handleAddMeal(opt.id)}>
+                            <PlusIcon size={11}/> {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+
           {/* ── Seção: Calcular ── */}
           <div className="config-section">
             <div className="config-section-header" onClick={() => toggleConfigSection('calc')}>
@@ -3968,6 +4117,14 @@ export default function Home() {
               Gerar nova dieta
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ══ Toast: refeições atualizadas ══ */}
+      {refeicaoToast && (
+        <div className="refeicao-toast">
+          <Utensils size={15} style={{ flexShrink: 0 }}/>
+          <span>Refeições atualizadas — calorias redistribuídas ✓</span>
         </div>
       )}
 
