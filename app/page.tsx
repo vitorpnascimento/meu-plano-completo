@@ -72,13 +72,15 @@ interface SubOption {
 }
 
 interface CustomFood {
-  id:    string
-  name:  string
-  kcal:  number
-  p:     number
-  c:     number
-  f:     number
-  grams: number  // tamanho da porção padrão
+  id:            string
+  name:          string
+  kcal:          number
+  p:             number
+  c:             number
+  f:             number
+  grams:         number   // tamanho da porção padrão
+  gramsPerUnit?: number   // gramas por unidade (ex: 25g/fatia)
+  initialUnits?: number   // quantidade inicial padrão (ex: 2 fatias)
 }
 
 interface WeightEntry {
@@ -540,7 +542,7 @@ function parseBioText(text: string): BioData {
 
 // ─── Componente ────────────────────────────────────────────────────────────────
 
-const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '' }
+const BLANK_ITEM_FORM = { name: '', kcal: '', p: '', c: '', f: '', hasUnits: false as boolean, gramsPerUnit: '' as string, initialUnits: '' as string }
 const BLANK_SUB_FORM  = { name: '', kcal: '', p: '', c: '', f: '', targetId: '' }
 
 function SyncIcon({ status }: { status: SyncStatus }) {
@@ -555,15 +557,15 @@ function SyncIcon({ status }: { status: SyncStatus }) {
 /** Adiciona alimento à biblioteca pessoal sem duplicar por nome. Puro — sem side effects. */
 function addFoodToLibrary(
   current: CustomFood[],
-  item: { name: string; kcal: number; p: number; c: number; f: number },
+  item: { name: string; kcal: number; p: number; c: number; f: number; gramsPerUnit?: number; initialUnits?: number },
   grams = 100,
 ): CustomFood[] {
   const name = item.name.trim()
   if (!name || current.some(cf => cf.name.toLowerCase() === name.toLowerCase())) return current
-  return [
-    ...current,
-    { id: newId(), name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, grams },
-  ]
+  const entry: CustomFood = { id: newId(), name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, grams }
+  if (item.gramsPerUnit !== undefined) entry.gramsPerUnit = item.gramsPerUnit
+  if (item.initialUnits !== undefined) entry.initialUnits = item.initialUnits
+  return [...current, entry]
 }
 
 /** Pesquisa na biblioteca pessoal por correspondência simples (case-insensitive). */
@@ -771,6 +773,7 @@ export default function Home() {
   const [myFoodsMealIdx,       setMyFoodsMealIdx]       = useState(0)
   const [myFoodsQuery,         setMyFoodsQuery]         = useState('')
   const [myFoodsDeleteConfirm, setMyFoodsDeleteConfirm] = useState<string | null>(null)
+  const [myFoodsPendingAdd,    setMyFoodsPendingAdd]    = useState<{ food: CustomFood; qty: number } | null>(null)
 
   // ── Import Modal ─────────────────────────────────────────────────────────────
   const [showImport,    setShowImport]    = useState(false)
@@ -1183,18 +1186,32 @@ export default function Home() {
 
   const openItemModal = (mode: 'edit'|'add', mealIdx: number, item?: MealItem) => {
     setItemModal({ mode, mealIdx, item })
-    setItemForm(item ? { name: item.name, kcal: String(item.kcal), p: String(item.p), c: String(item.c), f: String(item.f) } : BLANK_ITEM_FORM)
+    setItemForm(item ? { name: item.name, kcal: String(item.kcal), p: String(item.p), c: String(item.c), f: String(item.f), hasUnits: false, gramsPerUnit: '', initialUnits: '' } : BLANK_ITEM_FORM)
   }
 
   const saveItemModal = () => {
     if (!itemModal) return
+    const baseName = itemForm.name || 'Sem nome'
+    const kcal = parseFloat(itemForm.kcal) || 0
+    const p    = parseFloat(itemForm.p)    || 0
+    const c    = parseFloat(itemForm.c)    || 0
+    const f    = parseFloat(itemForm.f)    || 0
+
+    // Calcular nome e unitQty se unidades estiverem ativadas
+    const gramsPerUnit = itemForm.hasUnits ? (parseFloat(itemForm.gramsPerUnit) || 0) : 0
+    const initialUnits = itemForm.hasUnits ? (parseInt(itemForm.initialUnits)  || 1) : 0
+    const hasValidUnits = itemForm.hasUnits && gramsPerUnit > 0 && initialUnits > 0
+    const totalGrams = hasValidUnits ? gramsPerUnit * initialUnits : 0
+
+    const itemName = hasValidUnits
+      ? `${baseName} (${initialUnits} un) ${totalGrams}g`
+      : baseName
+
     const saved: MealItem = {
       id:   itemModal.item?.id || newId(),
-      name: itemForm.name || 'Sem nome',
-      kcal: parseFloat(itemForm.kcal) || 0,
-      p:    parseFloat(itemForm.p)    || 0,
-      c:    parseFloat(itemForm.c)    || 0,
-      f:    parseFloat(itemForm.f)    || 0,
+      name: itemName,
+      kcal, p, c, f,
+      ...(hasValidUnits ? { unitQty: initialUnits } : {}),
     }
     const nm = meals.map((m, mi) => mi !== itemModal.mealIdx ? m : {
       ...m,
@@ -1205,7 +1222,12 @@ export default function Home() {
     // Salva na biblioteca pessoal quando adicionando novo alimento
     let newCustomFoods = customFoods
     if (itemModal.mode === 'add') {
-      newCustomFoods = addFoodToLibrary(customFoods, saved)
+      newCustomFoods = addFoodToLibrary(
+        customFoods,
+        { name: baseName, kcal, p, c, f,
+          ...(hasValidUnits ? { gramsPerUnit, initialUnits } : {}) },
+        hasValidUnits ? totalGrams : 100,
+      )
       if (newCustomFoods !== customFoods) setCustomFoods(newCustomFoods)
     }
     setMeals(nm)
@@ -2933,7 +2955,7 @@ export default function Home() {
           <div className="modal-card" onClick={e => e.stopPropagation()}>
             <div className="modal-title">{itemModal.mode === 'edit' ? 'Editar Alimento' : 'Novo Alimento'}</div>
             {[
-              { key:'name', label:'Nome', type:'text',   placeholder:'Ex: Frango (200g)' },
+              { key:'name', label:'Nome', type:'text',   placeholder:'Ex: Frango' },
               { key:'kcal', label:'Calorias (kcal)', type:'number', placeholder:'Ex: 297' },
               { key:'p',    label:'Proteína (g)',    type:'number', placeholder:'Ex: 56'  },
               { key:'c',    label:'Carboidrato (g)', type:'number', placeholder:'Ex: 0'   },
@@ -2946,6 +2968,52 @@ export default function Home() {
                   onChange={e => setItemForm(prev => ({ ...prev, [key]: e.target.value }))} />
               </div>
             ))}
+
+            {/* Seção opcional de unidades */}
+            <div className="unit-section">
+              <div className="unit-toggle-row">
+                <span className="modal-label" style={{ margin: 0 }}>Este alimento tem unidades?</span>
+                <button
+                  type="button"
+                  className={`unit-toggle-btn ${itemForm.hasUnits ? 'unit-toggle-btn--on' : ''}`}
+                  onClick={() => setItemForm(prev => ({ ...prev, hasUnits: !prev.hasUnits }))}
+                >
+                  {itemForm.hasUnits ? 'Sim' : 'Não'}
+                </button>
+              </div>
+              {itemForm.hasUnits && (
+                <div className="unit-fields">
+                  <div>
+                    <label className="modal-label">Gramas por unidade</label>
+                    <input
+                      type="number"
+                      className="modal-input"
+                      placeholder="Ex: 25"
+                      min={1}
+                      value={itemForm.gramsPerUnit}
+                      onChange={e => setItemForm(prev => ({ ...prev, gramsPerUnit: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="modal-label">Quantidade inicial</label>
+                    <input
+                      type="number"
+                      className="modal-input"
+                      placeholder="Ex: 2"
+                      min={1}
+                      value={itemForm.initialUnits}
+                      onChange={e => setItemForm(prev => ({ ...prev, initialUnits: e.target.value }))}
+                    />
+                  </div>
+                  {itemForm.gramsPerUnit && itemForm.initialUnits && (
+                    <div className="unit-preview">
+                      {parseInt(itemForm.initialUnits) || 0} un × {parseFloat(itemForm.gramsPerUnit) || 0}g = {Math.round((parseInt(itemForm.initialUnits) || 0) * (parseFloat(itemForm.gramsPerUnit) || 0))}g total
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="modal-actions">
               <button className="btn" onClick={saveItemModal}>Salvar</button>
               <button className="btn btn-cancel" onClick={() => setItemModal(null)}>Cancelar</button>
@@ -4430,7 +4498,7 @@ export default function Home() {
 
       {/* ══ Modal: Meus Alimentos ══ */}
       {showMyFoods && (
-        <div className="modal-overlay" onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null) }}>
+        <div className="modal-overlay" onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null); setMyFoodsPendingAdd(null) }}>
           <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
             <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}>
               <BookMarked size={16}/> Meus Alimentos
@@ -4453,7 +4521,7 @@ export default function Home() {
               placeholder="Buscar na biblioteca..."
               value={myFoodsQuery}
               autoFocus
-              onChange={e => { setMyFoodsQuery(e.target.value); setMyFoodsDeleteConfirm(null) }}
+              onChange={e => { setMyFoodsQuery(e.target.value); setMyFoodsDeleteConfirm(null); setMyFoodsPendingAdd(null) }}
               style={{ marginBottom: 10 }}
             />
 
@@ -4477,7 +4545,13 @@ export default function Home() {
                     <div key={cf.id} className="my-foods-item">
                       <div className="my-foods-info">
                         <div className="my-foods-name">{cf.name}</div>
-                        <div className="my-foods-macros">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g · {cf.grams}g</div>
+                        <div className="my-foods-macros">
+                          {cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g
+                          {cf.gramsPerUnit ? ` · ${cf.grams}g` : ` · ${cf.grams}g`}
+                        </div>
+                        {cf.gramsPerUnit && (
+                          <div className="my-foods-unit-hint">1 un = {cf.gramsPerUnit}g</div>
+                        )}
                       </div>
                       <div className="my-foods-actions">
                         {myFoodsDeleteConfirm === cf.id ? (
@@ -4491,6 +4565,7 @@ export default function Home() {
                                 setCustomFoods(updated)
                                 save({ customFoods: updated })
                                 setMyFoodsDeleteConfirm(null)
+                                if (myFoodsPendingAdd?.food.id === cf.id) setMyFoodsPendingAdd(null)
                               }}
                             >
                               Remover
@@ -4503,22 +4578,75 @@ export default function Home() {
                               Cancelar
                             </button>
                           </div>
+                        ) : myFoodsPendingAdd?.food.id === cf.id ? (
+                          <div className="my-foods-unit-picker">
+                            <span className="my-foods-unit-picker-label">Quantas unidades?</span>
+                            <div className="my-foods-unit-picker-row">
+                              <button
+                                className="qty-btn"
+                                disabled={myFoodsPendingAdd.qty <= 1}
+                                onClick={() => setMyFoodsPendingAdd(p => p ? { ...p, qty: Math.max(1, p.qty - 1) } : p)}
+                              ><MinusIcon size={12}/></button>
+                              <span className="my-foods-unit-qty">{myFoodsPendingAdd.qty}</span>
+                              <button
+                                className="qty-btn"
+                                disabled={myFoodsPendingAdd.qty >= 99}
+                                onClick={() => setMyFoodsPendingAdd(p => p ? { ...p, qty: Math.min(99, p.qty + 1) } : p)}
+                              ><PlusIcon size={12}/></button>
+                            </div>
+                            <button
+                              className="config-reset-btn"
+                              style={{ fontSize: 11, color: 'var(--primary)' }}
+                              onClick={() => {
+                                const { food, qty } = myFoodsPendingAdd
+                                const ratio = food.gramsPerUnit && food.initialUnits
+                                  ? (qty * food.gramsPerUnit) / (food.initialUnits * food.gramsPerUnit)
+                                  : qty / (food.initialUnits ?? 1)
+                                const item: MealItem = {
+                                  id:   newId(),
+                                  name: `${food.name} (${qty} un) ${Math.round((food.gramsPerUnit ?? 0) * qty)}g`,
+                                  kcal: Math.round(food.kcal * ratio),
+                                  p:    +(food.p * ratio).toFixed(1),
+                                  c:    +(food.c * ratio).toFixed(1),
+                                  f:    +(food.f * ratio).toFixed(1),
+                                  unitQty: qty,
+                                }
+                                const nm = meals.map((m, mi) => mi !== myFoodsMealIdx ? m : { ...m, items: [...m.items, item] })
+                                setMeals(nm); save({ meals: nm })
+                                setMyFoodsPendingAdd(null); setShowMyFoods(false)
+                              }}
+                            >
+                              Confirmar
+                            </button>
+                            <button
+                              className="config-reset-btn"
+                              style={{ fontSize: 11 }}
+                              onClick={() => setMyFoodsPendingAdd(null)}
+                            >
+                              ✕
+                            </button>
+                          </div>
                         ) : (
                           <>
                             <button
                               className="config-reset-btn"
                               style={{ fontSize: 11, color: 'var(--primary)' }}
                               onClick={() => {
-                                const item: MealItem = {
-                                  id:   newId(),
-                                  name: cf.name,
-                                  kcal: cf.kcal,
-                                  p:    cf.p,
-                                  c:    cf.c,
-                                  f:    cf.f,
+                                if (cf.gramsPerUnit && cf.initialUnits) {
+                                  setMyFoodsPendingAdd({ food: cf, qty: cf.initialUnits })
+                                  setMyFoodsDeleteConfirm(null)
+                                } else {
+                                  const item: MealItem = {
+                                    id:   newId(),
+                                    name: cf.name,
+                                    kcal: cf.kcal,
+                                    p:    cf.p,
+                                    c:    cf.c,
+                                    f:    cf.f,
+                                  }
+                                  const nm = meals.map((m, mi) => mi !== myFoodsMealIdx ? m : { ...m, items: [...m.items, item] })
+                                  setMeals(nm); save({ meals: nm }); setShowMyFoods(false)
                                 }
-                                const nm = meals.map((m, mi) => mi !== myFoodsMealIdx ? m : { ...m, items: [...m.items, item] })
-                                setMeals(nm); save({ meals: nm }); setShowMyFoods(false)
                               }}
                             >
                               Adicionar
@@ -4526,7 +4654,7 @@ export default function Home() {
                             <button
                               className="config-reset-btn my-foods-delete-btn"
                               title="Remover da biblioteca"
-                              onClick={() => setMyFoodsDeleteConfirm(cf.id)}
+                              onClick={() => { setMyFoodsDeleteConfirm(cf.id); setMyFoodsPendingAdd(null) }}
                             >
                               <Trash2 size={13}/>
                             </button>
@@ -4542,7 +4670,7 @@ export default function Home() {
             <button
               className="btn btn-cancel"
               style={{ marginTop: 14 }}
-              onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null) }}
+              onClick={() => { setShowMyFoods(false); setMyFoodsDeleteConfirm(null); setMyFoodsPendingAdd(null) }}
             >
               Fechar
             </button>
