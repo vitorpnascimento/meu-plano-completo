@@ -3862,6 +3862,9 @@ html.dark .meal-add-btn { background: rgba(99,102,241,0.12); }
 .meal-drag-handle:hover { color: var(--primary); }
 .meal-drag-handle:active { cursor: grabbing; }
 
+/* item drag handle é menor que o de refeição */
+.item-drag-handle { padding: 1px 3px; }
+
 /* ── Badge "Meu alimento" na busca TACO ─────────────────────────────────── */
 .taco-custom-badge {
   display: inline-block;

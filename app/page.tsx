@@ -573,18 +573,55 @@ function searchCustomFoods(query: string, foods: CustomFood[]): CustomFood[] {
   return foods.filter(f => f.name.toLowerCase().includes(q))
 }
 
+// ─── SortableItemBlock ─────────────────────────────────────────────────────────
+
+interface SortableItemBlockProps {
+  item:     MealItem
+  onEdit:   () => void
+  onDelete: () => void
+}
+
+function SortableItemBlock({ item, onEdit, onDelete }: SortableItemBlockProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.45 : 1,
+  }
+  return (
+    <div ref={setNodeRef} style={style} className="config-item-row">
+      <button className="meal-drag-handle item-drag-handle" {...attributes} {...listeners} tabIndex={-1} title="Arrastar para reordenar">
+        <GripVertical size={13}/>
+      </button>
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
+        <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
+      </div>
+      <div style={{ display:'flex', gap:6 }}>
+        <button className="config-reset-btn" onClick={onEdit}>Editar</button>
+        <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={onDelete}>✕</button>
+      </div>
+    </div>
+  )
+}
+
 // ─── SortableMealBlock ─────────────────────────────────────────────────────────
 
 interface SortableMealBlockProps {
-  meal:          Meal
-  mealIdx:       number
-  onEditItem:    (item: MealItem) => void
-  onDeleteItem:  (itemId: string) => void
-  onAddManual:   () => void
-  onSearchTACO:  () => void
+  meal:           Meal
+  mealIdx:        number
+  dndSensors:     ReturnType<typeof useSensors>
+  onEditItem:     (item: MealItem) => void
+  onDeleteItem:   (itemId: string) => void
+  onAddManual:    () => void
+  onSearchTACO:   () => void
+  onItemsReorder: (newItems: MealItem[]) => void
 }
 
-function SortableMealBlock({ meal, mealIdx: _mealIdx, onEditItem, onDeleteItem, onAddManual, onSearchTACO }: SortableMealBlockProps) {
+function SortableMealBlock({
+  meal, mealIdx: _mealIdx, dndSensors,
+  onEditItem, onDeleteItem, onAddManual, onSearchTACO, onItemsReorder,
+}: SortableMealBlockProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: meal.id })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -592,6 +629,17 @@ function SortableMealBlock({ meal, mealIdx: _mealIdx, onEditItem, onDeleteItem, 
     opacity: isDragging ? 0.45 : 1,
     marginBottom: 20,
   }
+
+  const handleItemDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const items = meal.items ?? []
+    const oldIdx = items.findIndex(it => it.id === active.id)
+    const newIdx = items.findIndex(it => it.id === over.id)
+    if (oldIdx === -1 || newIdx === -1) return
+    onItemsReorder(arrayMove(items, oldIdx, newIdx))
+  }
+
   return (
     <div ref={setNodeRef} style={style}>
       <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
@@ -600,7 +648,7 @@ function SortableMealBlock({ meal, mealIdx: _mealIdx, onEditItem, onDeleteItem, 
           {...attributes}
           {...listeners}
           tabIndex={-1}
-          title="Arrastar para reordenar"
+          title="Arrastar refeição para reordenar"
         >
           <GripVertical size={15}/>
         </button>
@@ -608,18 +656,23 @@ function SortableMealBlock({ meal, mealIdx: _mealIdx, onEditItem, onDeleteItem, 
           {meal.title} · ~{(meal.items ?? []).reduce((s, it) => s + it.kcal, 0)} kcal
         </div>
       </div>
-      {(meal.items ?? []).map(item => (
-        <div key={item.id} className="config-item-row">
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:13, fontWeight:500 }}>{item.name}</div>
-            <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(item)}</div>
-          </div>
-          <div style={{ display:'flex', gap:6 }}>
-            <button className="config-reset-btn" onClick={() => onEditItem(item)}>Editar</button>
-            <button className="config-reset-btn" style={{ color:'var(--warning)' }} onClick={() => onDeleteItem(item.id)}>✕</button>
-          </div>
-        </div>
-      ))}
+      {/* Itens com drag-and-drop interno */}
+      <DndContext
+        sensors={dndSensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleItemDragEnd}
+      >
+        <SortableContext items={(meal.items ?? []).map(it => it.id)} strategy={verticalListSortingStrategy}>
+          {(meal.items ?? []).map(item => (
+            <SortableItemBlock
+              key={item.id}
+              item={item}
+              onEdit={() => onEditItem(item)}
+              onDelete={() => onDeleteItem(item.id)}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
       <div style={{ display:'flex', gap:6, marginTop:8 }}>
         <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onAddManual}>+ Adicionar manual</button>
         <button className="config-reset-btn" style={{ flex:1, textAlign:'center' }} onClick={onSearchTACO}><Search size={13}/> Buscar TACO</button>
@@ -702,7 +755,6 @@ export default function Home() {
   const [tacoMealIdx,         setTacoMealIdx]         = useState(0)
   // Biblioteca pessoal de alimentos
   const [customFoods,         setCustomFoods]         = useState<CustomFood[]>([])
-  const [tacoCustomResults,   setTacoCustomResults]   = useState<CustomFood[]>([])
   const [tacoCustomSelected,  setTacoCustomSelected]  = useState<CustomFood | null>(null)
   const [tacoCustomPorcao,    setTacoCustomPorcao]    = useState('')
 
@@ -1250,7 +1302,7 @@ export default function Home() {
 
   const openTACO = (mealIdx = 0) => {
     setTacoMealIdx(mealIdx); setTacoQuery(''); setTacoResults([]); setTacoSelected(null)
-    setTacoPorcao('100'); setTacoCustomResults([]); setTacoCustomSelected(null); setTacoCustomPorcao('')
+    setTacoPorcao('100'); setTacoCustomSelected(null); setTacoCustomPorcao('')
     setShowTACO(true)
   }
 
@@ -1510,6 +1562,14 @@ export default function Home() {
     const reordered = arrayMove(meals, oldIndex, newIndex)
     setMeals(reordered)
     save({ meals: reordered })
+  }
+
+  // ── Ações: Reordenar alimentos dentro de uma refeição ────────────────────────
+
+  const handleItemsReorder = (mealId: string, newItems: MealItem[]) => {
+    const nm = meals.map(m => m.id === mealId ? { ...m, items: newItems } : m)
+    setMeals(nm)
+    save({ meals: nm })
   }
 
   // ── Ações: Gerenciar Refeições ───────────────────────────────────────────────
@@ -2553,7 +2613,6 @@ export default function Home() {
                 const q = e.target.value
                 setTacoQuery(q)
                 setTacoResults(q.trim().length >= 2 ? searchTACO(q) : [])
-                setTacoCustomResults(searchCustomFoods(q, customFoods))
                 if (tacoSelected && !q.toLowerCase().includes(tacoSelected.nome.split(' ')[0].toLowerCase())) {
                   setTacoSelected(null)
                 }
@@ -2561,40 +2620,45 @@ export default function Home() {
               }}
             />
 
-            {(tacoCustomResults.length > 0 || tacoResults.length > 0) && !tacoSelected && !tacoCustomSelected && (
-              <div className="taco-results">
-                {/* Meus alimentos — aparecem primeiro */}
-                {tacoCustomResults.map(cf => (
-                  <button
-                    key={cf.id}
-                    className="taco-result-item"
-                    onClick={() => {
-                      setTacoCustomSelected(cf)
-                      setTacoCustomPorcao(String(cf.grams))
-                      setTacoResults([])
-                      setTacoCustomResults([])
-                    }}
-                  >
-                    <div className="taco-result-name">
-                      {cf.name}
-                      <span className="taco-custom-badge">Meu alimento</span>
-                    </div>
-                    <div className="taco-result-cat">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g</div>
-                  </button>
-                ))}
-                {/* Resultados TACO */}
-                {tacoResults.map(food => (
-                  <button
-                    key={food.id}
-                    className="taco-result-item"
-                    onClick={() => { setTacoSelected(food); setTacoResults([]); setTacoCustomResults([]) }}
-                  >
-                    <div className="taco-result-name">{food.nome}</div>
-                    <div className="taco-result-cat">{food.cat} · {food.kcal} kcal/100g · P{food.p}g · C{food.c}g · G{food.f}g</div>
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* Resultados de busca — computados inline para sempre refletir customFoods atual */}
+            {(() => {
+              const customMatches = searchCustomFoods(tacoQuery, customFoods)
+              const hasResults    = (customMatches.length > 0 || tacoResults.length > 0) && !tacoSelected && !tacoCustomSelected
+              if (!hasResults) return null
+              return (
+                <div className="taco-results">
+                  {/* Meus alimentos — aparecem primeiro */}
+                  {customMatches.map(cf => (
+                    <button
+                      key={cf.id}
+                      className="taco-result-item"
+                      onClick={() => {
+                        setTacoCustomSelected(cf)
+                        setTacoCustomPorcao(String(cf.grams))
+                        setTacoResults([])
+                      }}
+                    >
+                      <div className="taco-result-name">
+                        {cf.name}
+                        <span className="taco-custom-badge">Meu alimento</span>
+                      </div>
+                      <div className="taco-result-cat">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g</div>
+                    </button>
+                  ))}
+                  {/* Resultados TACO */}
+                  {tacoResults.map(food => (
+                    <button
+                      key={food.id}
+                      className="taco-result-item"
+                      onClick={() => { setTacoSelected(food); setTacoResults([]) }}
+                    >
+                      <div className="taco-result-name">{food.nome}</div>
+                      <div className="taco-result-cat">{food.cat} · {food.kcal} kcal/100g · P{food.p}g · C{food.c}g · G{food.f}g</div>
+                    </button>
+                  ))}
+                </div>
+              )
+            })()}
 
             {/* Alimento pessoal selecionado */}
             {tacoCustomSelected && (
@@ -2652,7 +2716,7 @@ export default function Home() {
                 <button
                   className="btn btn-cancel"
                   style={{ marginTop: 6 }}
-                  onClick={() => { setTacoCustomSelected(null); setTacoQuery(''); setTacoCustomResults([]) }}
+                  onClick={() => { setTacoCustomSelected(null); setTacoQuery('') }}
                 >
                   ← Buscar outro
                 </button>
@@ -4262,10 +4326,12 @@ export default function Home() {
                         key={meal.id}
                         meal={meal}
                         mealIdx={mealIdx}
+                        dndSensors={dndSensors}
                         onEditItem={item => openItemModal('edit', mealIdx, item)}
                         onDeleteItem={itemId => deleteMealItem(mealIdx, itemId)}
                         onAddManual={() => openItemModal('add', mealIdx)}
                         onSearchTACO={() => openTACO(mealIdx)}
+                        onItemsReorder={newItems => handleItemsReorder(meal.id, newItems)}
                       />
                     ))}
                   </SortableContext>
