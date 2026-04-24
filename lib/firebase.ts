@@ -6,6 +6,7 @@ import {
   getDoc,
   onSnapshot,
   Firestore,
+  deleteDoc,
 } from 'firebase/firestore'
 import {
   getAuth,
@@ -13,6 +14,7 @@ import {
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   onAuthStateChanged,
+  sendEmailVerification as fbSendEmailVerification,
   Auth,
   User,
 } from 'firebase/auth'
@@ -56,7 +58,13 @@ function init(): boolean {
 
 export async function createAccount(email: string, password: string) {
   if (!init() || !_auth) throw new Error('Firebase not configured')
-  return createUserWithEmailAndPassword(_auth, email, password)
+  const cred = await createUserWithEmailAndPassword(_auth, email, password)
+  await fbSendEmailVerification(cred.user).catch(() => {})
+  return cred
+}
+
+export async function resendVerificationEmail(user: User): Promise<void> {
+  await fbSendEmailVerification(user)
 }
 
 export async function loginWithEmail(email: string, password: string) {
@@ -126,6 +134,57 @@ export async function loadUserData(
     return snap.exists() ? (snap.data() as Record<string, any>) : null
   } catch (e) {
     console.error('[Firebase] load error:', e)
+    return null
+  }
+}
+
+// ── User Profile ─────────────────────────────────────────────────────────────
+
+export interface UserProfile {
+  username:     string
+  displayName:  string
+  birthDate?:   string
+  avatarType:   'preset' | 'upload'
+  avatarPreset?: string
+  avatarUrl?:   string
+  createdAt:    string
+}
+
+/** Verifica se um username está disponível (retorna true se disponível). */
+export async function checkUsernameAvailable(username: string, currentUid?: string): Promise<boolean> {
+  if (!init() || !_db) return false
+  try {
+    const snap = await getDoc(doc(_db, 'usernames', username.toLowerCase()))
+    if (!snap.exists()) return true
+    return snap.data()?.uid === currentUid // disponível se pertence ao próprio usuário
+  } catch {
+    return false
+  }
+}
+
+/** Salva perfil em userProfiles/{uid} e reserva username em usernames/{username}. */
+export async function saveUserProfile(uid: string, profile: UserProfile, oldUsername?: string): Promise<boolean> {
+  if (!init() || !_db || !uid) return false
+  try {
+    await setDoc(doc(_db, 'userProfiles', uid), { ...profile, updatedAt: new Date().toISOString() })
+    await setDoc(doc(_db, 'usernames', profile.username.toLowerCase()), { uid })
+    if (oldUsername && oldUsername !== profile.username.toLowerCase()) {
+      await deleteDoc(doc(_db, 'usernames', oldUsername)).catch(() => {})
+    }
+    return true
+  } catch (e) {
+    console.error('[Firebase] saveUserProfile error:', e)
+    return false
+  }
+}
+
+/** Carrega perfil de userProfiles/{uid}. */
+export async function loadUserProfile(uid: string): Promise<UserProfile | null> {
+  if (!init() || !_db || !uid) return null
+  try {
+    const snap = await getDoc(doc(_db, 'userProfiles', uid))
+    return snap.exists() ? (snap.data() as UserProfile) : null
+  } catch {
     return null
   }
 }

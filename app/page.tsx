@@ -13,7 +13,7 @@ import {
   Dumbbell, Lightbulb, ChevronDown, Trophy,
   AlertTriangle, Plus as PlusIcon, Radio, Upload,
   Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical, BookMarked,
-  ShoppingCart, CalendarDays,
+  ShoppingCart, CalendarDays, Activity,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -36,8 +36,13 @@ import {
   logoutUser,
   saveUserData,
   subscribeToUserData,
+  loadUserProfile,
+  saveUserProfile,
+  type UserProfile,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
+import EmailVerification from './components/EmailVerification'
+import ProfileSetup from './components/ProfileSetup'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
   getTodaySubstitutes, formatTacoItemName, naturalGrams, searchWithAI,
@@ -806,8 +811,10 @@ function SortableMealBlock({
 export default function Home() {
 
   // ── Auth ────────────────────────────────────────────────────────────────────
-  const [authUser,    setAuthUser]    = useState<User | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
+  const [authUser,      setAuthUser]      = useState<User | null>(null)
+  const [authLoading,   setAuthLoading]   = useState(true)
+  const [userProfile,   setUserProfile]   = useState<UserProfile | null | undefined>(undefined)
+  const [editingProfile,setEditingProfile]= useState(false)
 
   // ── App State ───────────────────────────────────────────────────────────────
   const [meals,        setMeals]        = useState<Meal[]>(DEFAULT_MEALS)
@@ -1061,6 +1068,17 @@ export default function Home() {
     })
     return unsub
   }, [applyData, resetState])
+
+  // ── Profile Load Effect ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!isFirebaseConfigured() || !authUser) {
+      setUserProfile(null)
+      return
+    }
+    setUserProfile(undefined) // loading
+    loadUserProfile(authUser.uid).then(p => setUserProfile(p))
+  }, [authUser])
 
   // ── Data Load Effect (real-time Firestore sync) ──────────────────────────────
 
@@ -2204,6 +2222,49 @@ export default function Home() {
 
   if (firebaseConfigured && !authUser) {
     return <LoginScreen />
+  }
+
+  // ── Verificação de email (apenas para contas novas — criadas há menos de 1h) ──
+  const isNewUnverified =
+    firebaseConfigured &&
+    authUser &&
+    !authUser.emailVerified &&
+    (Date.now() - new Date(authUser.metadata.creationTime!).getTime()) < 3_600_000
+
+  if (isNewUnverified) {
+    return <EmailVerification user={authUser!} onLogout={handleLogout} />
+  }
+
+  // ── Perfil de usuário ────────────────────────────────────────────────────────
+  if (firebaseConfigured && authUser && userProfile === undefined) {
+    // Carregando perfil — reutiliza tela de loading
+    return (
+      <div className="auth-loading">
+        <div className="auth-loading-logo"><Activity size={40} style={{ color:'var(--primary)' }}/></div>
+        <div className="auth-loading-text">Carregando perfil...</div>
+      </div>
+    )
+  }
+
+  if (firebaseConfigured && authUser && userProfile === null && !editingProfile) {
+    return (
+      <ProfileSetup
+        user={authUser}
+        onComplete={p => setUserProfile(p)}
+        onLogout={handleLogout}
+      />
+    )
+  }
+
+  if (editingProfile && authUser) {
+    return (
+      <ProfileSetup
+        user={authUser}
+        existingProfile={userProfile ?? undefined}
+        onComplete={p => { setUserProfile(p); setEditingProfile(false) }}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   // ── Tela dedicada de onboarding ──────────────────────────────────────────────
@@ -3697,9 +3758,34 @@ export default function Home() {
       <header>
         <div className="header-content">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div>
-              <h1>Meu Plano <span className="brand-dot" /></h1>
-              <div className="subtitle">Dieta · Treino · Progresso</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {userProfile && (
+                <div style={{
+                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                  background: userProfile.avatarType === 'upload' ? 'transparent'
+                    : (['indigo','emerald','rose','orange','purple','cyan','amber','teal'] as const)
+                        .reduce((m,id,i) => ({ ...m, [id]: ['#6366F1','#10B981','#F43F5E','#F97316','#8B5CF6','#06B6D4','#EAB308','#14B8A6'][i] }), {} as any)
+                        [userProfile.avatarPreset ?? 'indigo'] ?? '#6366F1',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, overflow: 'hidden', border: '2px solid var(--primary-mid)',
+                }}>
+                  {userProfile.avatarType === 'upload' && userProfile.avatarUrl
+                    ? <img src={userProfile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="avatar" />
+                    : (['💪','🥗','🎯','🏃','⚡','🏊','⭐','🌿'] as const)[
+                        ['indigo','emerald','rose','orange','purple','cyan','amber','teal'].indexOf(userProfile.avatarPreset ?? 'indigo')
+                      ] ?? '💪'
+                  }
+                </div>
+              )}
+              <div>
+                <h1>
+                  {userProfile ? `Olá, ${userProfile.displayName.split(' ')[0]}!` : 'Meu Plano'}
+                  {' '}<span className="brand-dot" />
+                </h1>
+                <div className="subtitle">
+                  {userProfile ? `@${userProfile.username}` : 'Dieta · Treino · Progresso'}
+                </div>
+              </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {firebaseConfigured && syncStatus !== 'unconfigured' && (
@@ -4367,9 +4453,42 @@ export default function Home() {
               </div>
               {configSections.conta && (
                 <div className="config-section-body">
-                  <div className="account-row" style={{ marginTop: 8 }}>
+                  {/* Avatar + info do perfil */}
+                  {userProfile && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                      <div style={{
+                        width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
+                        background: userProfile.avatarType === 'upload' ? 'transparent'
+                          : (['indigo','emerald','rose','orange','purple','cyan','amber','teal'] as const)
+                              .reduce((m,id,i) => ({ ...m, [id]: ['#6366F1','#10B981','#F43F5E','#F97316','#8B5CF6','#06B6D4','#EAB308','#14B8A6'][i] }), {} as any)
+                              [userProfile.avatarPreset ?? 'indigo'] ?? '#6366F1',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 24, overflow: 'hidden', border: '2px solid var(--primary-mid)',
+                      }}>
+                        {userProfile.avatarType === 'upload' && userProfile.avatarUrl
+                          ? <img src={userProfile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="avatar" />
+                          : (['💪','🥗','🎯','🏃','⚡','🏊','⭐','🌿'] as const)[
+                              ['indigo','emerald','rose','orange','purple','cyan','amber','teal'].indexOf(userProfile.avatarPreset ?? 'indigo')
+                            ] ?? '💪'
+                        }
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 15, fontWeight: 700, truncate: true }}>{userProfile.displayName}</div>
+                        <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 600 }}>@{userProfile.username}</div>
+                        {userProfile.birthDate && (
+                          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                            {new Date(userProfile.birthDate + 'T00:00:00').toLocaleDateString('pt-BR')}
+                          </div>
+                        )}
+                      </div>
+                      <button className="btn btn-small" style={{ width: 'auto', flexShrink: 0 }} onClick={() => setEditingProfile(true)}>
+                        Editar
+                      </button>
+                    </div>
+                  )}
+                  <div className="account-row" style={{ marginTop: userProfile ? 0 : 8 }}>
                     <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{authUser.email}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{authUser.email}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, display:'flex', alignItems:'center', gap:4 }}>
                         <SyncIcon status={syncStatus} />
                         {syncStatus === 'synced'  && 'Sincronizado'}
