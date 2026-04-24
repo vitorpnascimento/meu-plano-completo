@@ -274,9 +274,9 @@ const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
   33: { label: 'unidades',      size: 30   },
   113:{ label: 'pacotes',       size: 500  },
   // Suplementos (por dose)
-  55: { label: 'doses (30g)',   size: 30   },
-  56: { label: 'doses (30g)',   size: 30   },
-  57: { label: 'doses (30g)',   size: 30   },
+  55: { label: 'doses (20g)',   size: 20   },
+  56: { label: 'doses (20g)',   size: 20   },
+  57: { label: 'doses (20g)',   size: 20   },
   // Pastas e oleaginosas
   92: { label: 'pctes (200g)',  size: 200  },
   93: { label: 'potes (500g)',  size: 500  },
@@ -354,9 +354,10 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
   return `${weeklyG.toLocaleString('pt-BR')} g`
 }
 
-/** Normaliza nome para chave de deduplicação: remove acentos, pontuação e espaços extras */
+/** Normaliza nome para chave de deduplicação: remove parênteses, acentos, pontuação e espaços extras */
 function normShopKey(name: string): string {
   return name
+    .replace(/\(.*?\)/g, '')          // remove tudo entre parênteses: "(2un)", "(1 un)", "(13 un)"
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[,.()\-]/g, ' ')
