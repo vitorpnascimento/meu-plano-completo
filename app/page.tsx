@@ -13,6 +13,7 @@ import {
   Dumbbell, Lightbulb, ChevronDown, Trophy,
   AlertTriangle, Plus as PlusIcon, Radio, Upload,
   Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical, BookMarked,
+  ShoppingCart, CalendarDays,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -809,10 +810,12 @@ export default function Home() {
   // ── Gerar Dieta ───────────────────────────────────────────────────────────────
   const [dietTarget,    setDietTarget]    = useState('')
   const [dietBudget,      setDietBudget]      = useState(false)
-  const [dietVariantIdx,  setDietVariantIdx]  = useState(0)
-  const [generatedDiet,   setGeneratedDiet]   = useState<GeneratedMeal[] | null>(null)
-  const [dietSubModal,  setDietSubModal]  = useState<{mealIdx:number; itemIdx:number} | null>(null)
-  const [dietSubs,      setDietSubs]      = useState<TacoFood[]>([])
+  const [dietVariantIdx,    setDietVariantIdx]    = useState(0)
+  const [generatedDiet,     setGeneratedDiet]     = useState<GeneratedMeal[] | null>(null)
+  const [dietSubModal,      setDietSubModal]      = useState<{mealIdx:number; itemIdx:number} | null>(null)
+  const [dietSubs,          setDietSubs]          = useState<TacoFood[]>([])
+  const [showHistoryModal,  setShowHistoryModal]  = useState(false)
+  const [showShoppingModal, setShowShoppingModal] = useState(false)
 
   // ── Substituidores Hoje ───────────────────────────────────────────────────────
   const [todaySubItem,        setTodaySubItem]        = useState<MealItem | null>(null)
@@ -1944,6 +1947,57 @@ export default function Home() {
 
   const allItemOptions = meals.flatMap(m => (m.items ?? []).map(it => ({ id: it.id, label: `${m.title} → ${it.name}` })))
 
+  // ── Streak de dias consecutivos (≥70% da meta calórica ou dia finalizado) ────
+  const streakDays = useMemo(() => {
+    const threshold = userGoals.cals * 0.7
+    let streak = 0
+    for (let i = 0; i < 365; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().slice(0, 10)
+      const { cals } = calcDayMacros(meals, checked[key] || {}, activeSubs)
+      const ok = cals >= threshold || !!dayStats[key]?.finalizado
+      if (ok) { streak++; continue }
+      if (i === 0) continue // hoje pode ainda não ter atingido
+      break
+    }
+    return streak
+  }, [checked, dayStats, meals, activeSubs, userGoals.cals])
+
+  // ── Últimos 14 dias para o histórico compacto ────────────────────────────────
+  const last14Days = useMemo(() =>
+    Array.from({ length: 14 }, (_, i) => {
+      const d = new Date()
+      d.setDate(d.getDate() - i)
+      const key  = d.toISOString().slice(0, 10)
+      const macros = calcDayMacros(meals, checked[key] || {}, activeSubs)
+      const extra  = dayStats[key]?.caloriasExtras ?? 0
+      const totalCals = macros.cals + extra
+      return {
+        key,
+        label: d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' }),
+        cals: totalCals,
+        p: macros.p, c: macros.c, f: macros.f,
+        finalizado: !!dayStats[key]?.finalizado,
+        isToday: i === 0,
+      }
+    }).filter(d => d.cals > 0 || d.finalizado)
+  , [checked, dayStats, meals, activeSubs])
+
+  // ── Lista de compras semanal (por refeição) ───────────────────────────────────
+  const shoppingListByMeal = useMemo(() =>
+    meals
+      .filter(m => (m.items ?? []).length > 0)
+      .map(m => ({
+        title: m.title,
+        items: (m.items ?? []).map(item => {
+          const gMatch = item.name.match(/(\d+)g\)?$/)
+          const g = gMatch ? parseInt(gMatch[1]) : null
+          return { name: item.name, weeklyG: g ? g * 7 : null }
+        }),
+      }))
+  , [meals])
+
   const firebaseConfigured = isFirebaseConfigured()
 
   // ── Setup gate ───────────────────────────────────────────────────────────────
@@ -2985,6 +3039,101 @@ export default function Home() {
         </div>
       )}
 
+      {/* ══ Modal: Histórico de 14 Dias ══ */}
+      {showHistoryModal && (
+        <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <CalendarDays size={16}/> Histórico Recente
+            </div>
+            {last14Days.length === 0 ? (
+              <div style={{ color:'var(--text-secondary)', fontSize:13, textAlign:'center', padding:'16px 0' }}>
+                Nenhum dado registrado ainda.
+              </div>
+            ) : last14Days.map(day => {
+              const pct = userGoals.cals > 0 ? Math.min(100, (day.cals / userGoals.cals) * 100) : 0
+              const barColor = pct >= 90 ? 'var(--success)' : pct >= 60 ? 'var(--warning)' : 'var(--error)'
+              return (
+                <div key={day.key} style={{ marginBottom:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:3 }}>
+                    <span style={{ fontSize:12, fontWeight: day.isToday ? 600 : 400, color: day.isToday ? 'var(--primary)' : 'var(--text-secondary)', textTransform:'capitalize' }}>
+                      {day.isToday ? 'Hoje' : day.label}
+                    </span>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ fontSize:12, color:'var(--text-secondary)' }}>
+                        P{day.p}g · C{day.c}g · G{day.f}g
+                      </span>
+                      <span style={{ fontSize:12, fontWeight:600 }}>
+                        {day.cals > 0 ? `${day.cals.toLocaleString('pt-BR')} kcal` : '—'}
+                      </span>
+                      {day.finalizado && <CheckCircle2 size={13} style={{ color:'var(--success)' }} />}
+                    </div>
+                  </div>
+                  <div style={{ height:7, background:'var(--border)', borderRadius:4, overflow:'hidden' }}>
+                    <div style={{ width:`${pct}%`, height:'100%', background:barColor, borderRadius:4, transition:'width .4s' }} />
+                  </div>
+                </div>
+              )
+            })}
+            {streakDays >= 2 && (
+              <div style={{ marginTop:12, padding:'8px 12px', background:'rgba(255,160,0,.08)', borderRadius:8, display:'flex', alignItems:'center', gap:8, fontSize:13 }}>
+                <Flame size={15} style={{ color:'var(--warning)' }}/> <strong>{streakDays} dias seguidos</strong> batendo a meta!
+              </div>
+            )}
+            <button className="btn btn-cancel" style={{ marginTop:14 }} onClick={() => setShowHistoryModal(false)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Lista de Compras Semanal ══ */}
+      {showShoppingModal && (
+        <div className="modal-overlay" onClick={() => setShowShoppingModal(false)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <ShoppingCart size={16}/> Lista de Compras Semanal
+            </div>
+            {shoppingListByMeal.length === 0 ? (
+              <div style={{ color:'var(--text-secondary)', fontSize:13, textAlign:'center', padding:'16px 0' }}>
+                Nenhum item no cardápio ainda.
+              </div>
+            ) : (
+              <>
+                {shoppingListByMeal.map(group => (
+                  <div key={group.title} style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'var(--primary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6 }}>
+                      {group.title}
+                    </div>
+                    {group.items.map((item, i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid var(--border)', fontSize:13 }}>
+                        <span>☐ {item.name}</span>
+                        {item.weeklyG && (
+                          <span style={{ color:'var(--text-secondary)', fontSize:12, whiteSpace:'nowrap', marginLeft:8 }}>
+                            ×7 ≈ {item.weeklyG.toLocaleString('pt-BR')}g
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <button className="btn btn-small" style={{ width:'100%', marginTop:8 }} onClick={() => {
+                  const lines = ['🛒 LISTA DE COMPRAS SEMANAL', '']
+                  shoppingListByMeal.forEach(g => {
+                    lines.push(`── ${g.title.toUpperCase()} ──`)
+                    g.items.forEach(it => lines.push(`☐ ${it.name}${it.weeklyG ? ` (×7 ≈ ${it.weeklyG.toLocaleString('pt-BR')}g)` : ''}`))
+                    lines.push('')
+                  })
+                  lines.push('Gerado pelo Meu Plano Completo')
+                  navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
+                }}>
+                  <Copy size={13}/> Copiar lista
+                </button>
+              </>
+            )}
+            <button className="btn btn-cancel" style={{ marginTop:8 }} onClick={() => setShowShoppingModal(false)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
       {/* ══ Modal: Editar / Adicionar Item ══ */}
       {itemModal && (
         <div className="modal-overlay" onClick={() => setItemModal(null)}>
@@ -3416,7 +3565,14 @@ export default function Home() {
                 onClick={() => { setActiveTab('estatísticas'); setStatsSubTab('diario') }}>
                 <div className="day-hero-header">
                   <span className="day-hero-date">{dateStr}</span>
-                  <span className="day-hero-meal-badge">{mealsCompleted}/{mealsMeta} refeições</span>
+                  <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                    {streakDays >= 2 && (
+                      <span style={{ fontSize:12, fontWeight:600, color:'var(--warning)', background:'rgba(255,160,0,.12)', borderRadius:8, padding:'2px 8px', display:'flex', alignItems:'center', gap:3 }}>
+                        <Flame size={12}/> {streakDays} dias
+                      </span>
+                    )}
+                    <span className="day-hero-meal-badge">{mealsCompleted}/{mealsMeta} refeições</span>
+                  </div>
                 </div>
                 <div className="day-hero-body">
                   {/* Anel SVG */}
@@ -3591,6 +3747,33 @@ export default function Home() {
             <button className="btn btn-finalizar" onClick={() => setShowFinalize(true)}>
               <Flag size={16} /> Finalizar Dia
             </button>
+          )}
+
+          {/* ── Histórico Recente ── */}
+          {last14Days.length > 1 && (
+            <div className="card" style={{ marginTop:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                <div className="card-title" style={{ margin:0 }}><CalendarDays size={15} style={{ verticalAlign:'middle', marginRight:5 }}/>Histórico Recente</div>
+                <button className="btn btn-small btn-cancel" style={{ width:'auto', padding:'3px 10px', fontSize:12 }}
+                  onClick={() => setShowHistoryModal(true)}>Ver tudo</button>
+              </div>
+              {last14Days.slice(0, 7).map(day => {
+                const pct = userGoals.cals > 0 ? Math.min(100, (day.cals / userGoals.cals) * 100) : 0
+                const barColor = pct >= 90 ? 'var(--success)' : pct >= 60 ? 'var(--warning)' : 'var(--error)'
+                return (
+                  <div key={day.key} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)', width:80, flexShrink:0, textTransform:'capitalize' }}>{day.label}</span>
+                    <div style={{ flex:1, height:6, background:'var(--border)', borderRadius:3, overflow:'hidden' }}>
+                      <div style={{ width:`${pct}%`, height:'100%', background:barColor, borderRadius:3, transition:'width .4s' }} />
+                    </div>
+                    <span style={{ fontSize:11, color:'var(--text-secondary)', width:60, textAlign:'right', flexShrink:0 }}>
+                      {day.cals > 0 ? `${day.cals.toLocaleString('pt-BR')} kcal` : '—'}
+                    </span>
+                    {day.finalizado && <CheckCircle2 size={12} style={{ color:'var(--success)', flexShrink:0 }} />}
+                  </div>
+                )
+              })}
+            </div>
           )}
 
         </div>
@@ -4401,9 +4584,10 @@ export default function Home() {
             </div>
             {configSections.cardapio && (
               <div className="config-section-body">
-                {/* ── Buscar TACO ── */}
-                <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8 }}>
+                {/* ── Buscar TACO + Lista de Compras ── */}
+                <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8, flexWrap:'wrap' }}>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}><Search size={13}/> Buscar TACO</button>
+                  <button className="btn btn-small" style={{ width:'auto' }} onClick={() => setShowShoppingModal(true)}><ShoppingCart size={13}/> Lista de Compras</button>
                 </div>
 
                 {/* ── Adicionar alimento manual ── */}
