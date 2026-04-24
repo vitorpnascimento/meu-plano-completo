@@ -3952,7 +3952,15 @@ export default function Home() {
                   }
                 </button>
               )}
-              <div key={headerKey} className={`header-msg-${headerPhase}`} style={{ overflow: 'hidden' }}>
+              <div key={headerKey} className={
+                headerPhase === 'greeting' ? 'header-msg-greeting' :
+                headerPhase === 'brand'    ? 'header-msg-brand'    :
+                activeTab === 'hoje'           ? 'header-tab-hoje'       :
+                activeTab === 'peso'           ? 'header-tab-peso'       :
+                activeTab === 'estatísticas'   ? 'header-tab-stats'      :
+                activeTab === 'comunidade'     ? 'header-tab-comunidade' :
+                'header-tab-config'
+              } style={{ overflow: 'hidden' }}>
                 <h1 style={{ whiteSpace: 'nowrap' }}>
                   {headerPhase === 'greeting'
                     ? `Olá, ${userProfile?.displayName?.split(' ')[0] ?? 'você'}!`
