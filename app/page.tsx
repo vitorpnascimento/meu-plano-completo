@@ -215,6 +215,145 @@ const DEFAULT_ALTERNATIVES: Record<string, SubOption[]> = {
 const DEFAULT_GOALS     = { cals: 1963, p: 214, c: 161, f: 43 }
 const NEW_USER_GOALS    = { cals: 2000, p: 150, c: 200, f: 65 }
 
+// ─── Lista de Compras — unidades práticas de mercado ──────────────────────────
+
+/** Tamanho da embalagem/unidade de compra por ID TACO (em gramas ou ml) */
+const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
+  // Ovos
+  19: { label: 'ovos',          size: 60  },
+  20: { label: 'ovos',          size: 60  },
+  21: { label: 'ovos',          size: 60  },
+  22: { label: 'claras',        size: 30  },
+  // Leite
+  46: { label: 'L',             size: 1000 },
+  47: { label: 'L',             size: 1000 },
+  // Iogurte
+  48: { label: 'potes (170g)',  size: 170  },
+  49: { label: 'potes (170g)',  size: 170  },
+  99: { label: 'potes (170g)',  size: 170  },
+  // Requeijão
+  54: { label: 'potes (200g)',  size: 200  },
+  98: { label: 'potes (200g)',  size: 200  },
+  // Queijos
+  50: { label: 'pctes (150g)',  size: 150  },
+  51: { label: 'potes (200g)',  size: 200  },
+  52: { label: 'pctes (250g)',  size: 250  },
+  // Atum / sardinha enlatados
+  13: { label: 'latas (170g)',  size: 170  },
+  16: { label: 'latas (125g)',  size: 125  },
+  // Carnes e aves (granel, vende por kg)
+  1:  { label: 'kg', size: 1000 },  2:  { label: 'kg', size: 1000 },
+  3:  { label: 'kg', size: 1000 },  4:  { label: 'kg', size: 1000 },
+  5:  { label: 'kg', size: 1000 },  6:  { label: 'kg', size: 1000 },
+  7:  { label: 'kg', size: 1000 },  8:  { label: 'kg', size: 1000 },
+  9:  { label: 'kg', size: 1000 },  10: { label: 'kg', size: 1000 },
+  11: { label: 'kg', size: 1000 },  12: { label: 'kg', size: 1000 },
+  14: { label: 'kg', size: 1000 },  15: { label: 'kg', size: 1000 },
+  17: { label: 'kg', size: 1000 },  18: { label: 'kg', size: 1000 },
+  110:{ label: 'kg', size: 1000 },  112:{ label: 'kg', size: 1000 },
+  // Arroz, feijão, leguminosas
+  23: { label: 'kg', size: 1000 },  24: { label: 'kg', size: 1000 },
+  40: { label: 'kg', size: 1000 },  41: { label: 'kg', size: 1000 },
+  42: { label: 'kg', size: 1000 },  43: { label: 'kg', size: 1000 },
+  44: { label: 'kg', size: 1000 },  45: { label: 'kg', size: 1000 },
+  // Tubérculos
+  36: { label: 'kg', size: 1000 },  37: { label: 'kg', size: 1000 },
+  38: { label: 'kg', size: 1000 },  39: { label: 'kg', size: 1000 },
+  // Cereais embalados
+  27: { label: 'pctes (500g)',  size: 500  },
+  28: { label: 'pctes (500g)',  size: 500  },
+  29: { label: 'pctes (500g)',  size: 500  },
+  32: { label: 'pctes (500g)',  size: 500  },
+  34: { label: 'pctes (500g)',  size: 500  },
+  35: { label: 'pctes (500g)',  size: 500  },
+  114:{ label: 'pctes (500g)',  size: 500  },
+  115:{ label: 'pctes (500g)',  size: 500  },
+  // Pão
+  25: { label: 'unidades',      size: 50   },
+  26: { label: 'pacotes',       size: 500  },
+  33: { label: 'unidades',      size: 30   },
+  113:{ label: 'pacotes',       size: 500  },
+  // Suplementos (por dose)
+  55: { label: 'doses (30g)',   size: 30   },
+  56: { label: 'doses (30g)',   size: 30   },
+  57: { label: 'doses (30g)',   size: 30   },
+  // Pastas e oleaginosas
+  92: { label: 'pctes (200g)',  size: 200  },
+  93: { label: 'potes (500g)',  size: 500  },
+  94: { label: 'pctes (200g)',  size: 200  },
+  95: { label: 'pctes (200g)',  size: 200  },
+  96: { label: 'pctes (200g)',  size: 200  },
+  97: { label: 'pctes (200g)',  size: 200  },
+  // Óleos
+  89: { label: 'frascos (500ml)', size: 500 },
+  90: { label: 'frascos (900ml)', size: 900 },
+  // Frutas (por unidade)
+  58: { label: 'unidades',      size: 100  },
+  59: { label: 'unidades',      size: 80   },
+  60: { label: 'unidades',      size: 130  },
+  61: { label: 'unidades',      size: 150  },
+  62: { label: 'unidades',      size: 300  },
+  63: { label: 'unidades',      size: 12   },
+  67: { label: 'unidades',      size: 250  },
+  68: { label: 'cachos',        size: 400  },
+  69: { label: 'unidades',      size: 80   },
+  70: { label: 'unidades',      size: 150  },
+  71: { label: 'unidades',      size: 200  },
+  // Outros
+  104:{ label: 'potes (300g)',  size: 300  },
+}
+
+/** Mapeia categorias TACO → categorias de mercado */
+const TACO_CAT_TO_SHOP: Record<string, string> = {
+  'Carnes':      'Proteínas',
+  'Peixes':      'Proteínas',
+  'Ovos':        'Proteínas',
+  'Leguminosas': 'Grãos e Leguminosas',
+  'Cereais':     'Cereais e Pães',
+  'Tubérculos':  'Legumes e Verduras',
+  'Laticínios':  'Laticínios',
+  'Suplementos': 'Suplementos',
+  'Frutas':      'Frutas',
+  'Hortaliças':  'Legumes e Verduras',
+  'Gorduras':    'Óleos e Gorduras',
+  'Oleaginosas': 'Oleaginosas',
+  'Condimentos': 'Outros',
+  'Bebidas':     'Outros',
+  'Outros':      'Outros',
+}
+
+const SHOP_CAT_ORDER = [
+  'Proteínas', 'Laticínios', 'Cereais e Pães', 'Grãos e Leguminosas',
+  'Legumes e Verduras', 'Frutas', 'Oleaginosas', 'Óleos e Gorduras',
+  'Suplementos', 'Outros',
+]
+
+/** Extrai nome-base e gramas de um nome de item (ex: "Ovo cozido (2 un) 100g" → base + 100g) */
+function parseItemName(fullName: string): { baseName: string; grams: number | null } {
+  // Padrão com unidade: "Ovo cozido (2 un) 100g"
+  const mUnit = fullName.match(/^(.+?)\s*\(\d+\s*\w+\)\s*(\d+)g$/)
+  if (mUnit) return { baseName: mUnit[1].trim(), grams: parseInt(mUnit[2]) }
+  // Padrão simples: "Frango grelhado 180g"
+  const mSimple = fullName.match(/^(.+?)\s+(\d+)g$/)
+  if (mSimple) return { baseName: mSimple[1].trim(), grams: parseInt(mSimple[2]) }
+  return { baseName: fullName.trim(), grams: null }
+}
+
+/** Converte gramas semanais em quantidade de compra legível */
+function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
+  const pack = tacoId !== null ? SHOPPING_PACK[tacoId] : undefined
+  if (pack) {
+    const qty = Math.ceil(weeklyG / pack.size)
+    if (pack.label === 'kg') {
+      const kg = (weeklyG / 1000).toFixed(1).replace('.', ',')
+      return `${kg} kg`
+    }
+    return `${qty} ${pack.label}`
+  }
+  if (weeklyG >= 900) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
+  return `${weeklyG.toLocaleString('pt-BR')} g`
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function calcDayMacros(
@@ -814,8 +953,9 @@ export default function Home() {
   const [generatedDiet,     setGeneratedDiet]     = useState<GeneratedMeal[] | null>(null)
   const [dietSubModal,      setDietSubModal]      = useState<{mealIdx:number; itemIdx:number} | null>(null)
   const [dietSubs,          setDietSubs]          = useState<TacoFood[]>([])
-  const [showHistoryModal,  setShowHistoryModal]  = useState(false)
-  const [showShoppingModal, setShowShoppingModal] = useState(false)
+  const [showHistoryModal,   setShowHistoryModal]   = useState(false)
+  const [showShoppingModal,  setShowShoppingModal]  = useState(false)
+  const [shoppingByMealOpen, setShoppingByMealOpen] = useState(false)
 
   // ── Substituidores Hoje ───────────────────────────────────────────────────────
   const [todaySubItem,        setTodaySubItem]        = useState<MealItem | null>(null)
@@ -1985,18 +2125,58 @@ export default function Home() {
   , [checked, dayStats, meals, activeSubs])
 
   // ── Lista de compras semanal (por refeição) ───────────────────────────────────
-  const shoppingListByMeal = useMemo(() =>
-    meals
+  // ── Lista de compras: agrega, deduplica e converte para unidades práticas ────
+  const shoppingData = useMemo(() => {
+    type AggItem = { baseName: string; weeklyG: number; tacoId: number | null; cat: string; inMeals: string[] }
+    const agg = new Map<string, AggItem>()
+
+    for (const meal of meals) {
+      for (const item of (meal.items ?? [])) {
+        const { baseName, grams } = parseItemName(item.name)
+        const dailyG  = grams ?? 100
+        const weeklyG = dailyG * 7
+        const tacoMatch = fuzzyMatchTACO(baseName)
+        const tacoId    = tacoMatch?.id ?? null
+        const cat       = TACO_CAT_TO_SHOP[tacoMatch?.cat ?? ''] ?? 'Outros'
+        const key = baseName.toLowerCase().trim()
+        const existing  = agg.get(key)
+        if (existing) {
+          existing.weeklyG += weeklyG
+          if (!existing.inMeals.includes(meal.title)) existing.inMeals.push(meal.title)
+          if (existing.tacoId === null && tacoId !== null) existing.tacoId = tacoId
+        } else {
+          agg.set(key, { baseName, weeklyG, tacoId, cat, inMeals: [meal.title] })
+        }
+      }
+    }
+
+    // Agrupa por categoria na ordem definida
+    const byCat = new Map<string, { name: string; label: string; inMeals: string[] }[]>()
+    for (const item of agg.values()) {
+      const entry = { name: item.baseName, label: toShoppingLabel(item.weeklyG, item.tacoId), inMeals: item.inMeals }
+      const arr   = byCat.get(item.cat) ?? []
+      arr.push(entry)
+      byCat.set(item.cat, arr)
+    }
+    const byCategory = SHOP_CAT_ORDER
+      .filter(cat => byCat.has(cat))
+      .map(cat => ({ cat, items: byCat.get(cat)!.sort((a, b) => a.name.localeCompare(b.name)) }))
+
+    // Vista por refeição (secundária)
+    const byMeal = meals
       .filter(m => (m.items ?? []).length > 0)
       .map(m => ({
         title: m.title,
         items: (m.items ?? []).map(item => {
-          const gMatch = item.name.match(/(\d+)g\)?$/)
-          const g = gMatch ? parseInt(gMatch[1]) : null
-          return { name: item.name, weeklyG: g ? g * 7 : null }
+          const { baseName, grams } = parseItemName(item.name)
+          const tacoId = fuzzyMatchTACO(baseName)?.id ?? null
+          const label  = toShoppingLabel((grams ?? 100) * 7, tacoId)
+          return { name: baseName, label }
         }),
       }))
-  , [meals])
+
+    return { byCategory, byMeal, total: agg.size }
+  }, [meals])
 
   const firebaseConfigured = isFirebaseConfigured()
 
@@ -3094,35 +3274,63 @@ export default function Home() {
           <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
             <div className="modal-title" style={{ display:'flex', alignItems:'center', gap:8 }}>
               <ShoppingCart size={16}/> Lista de Compras Semanal
+              {shoppingData.total > 0 && (
+                <span style={{ fontSize:12, color:'var(--text-secondary)', fontWeight:400 }}>({shoppingData.total} itens)</span>
+              )}
             </div>
-            {shoppingListByMeal.length === 0 ? (
+
+            {shoppingData.byCategory.length === 0 ? (
               <div style={{ color:'var(--text-secondary)', fontSize:13, textAlign:'center', padding:'16px 0' }}>
                 Nenhum item no cardápio ainda.
               </div>
             ) : (
               <>
-                {shoppingListByMeal.map(group => (
-                  <div key={group.title} style={{ marginBottom:14 }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:'var(--primary)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:6 }}>
-                      {group.title}
+                {/* ── Vista principal: por categoria ── */}
+                {shoppingData.byCategory.map(({ cat, items }) => (
+                  <div key={cat} style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'var(--primary)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>
+                      {cat}
                     </div>
-                    {group.items.map((item, i) => (
-                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid var(--border)', fontSize:13 }}>
-                        <span>☐ {item.name}</span>
-                        {item.weeklyG && (
-                          <span style={{ color:'var(--text-secondary)', fontSize:12, whiteSpace:'nowrap', marginLeft:8 }}>
-                            ×7 ≈ {item.weeklyG.toLocaleString('pt-BR')}g
-                          </span>
-                        )}
+                    {items.map((item, i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'5px 0', borderBottom:'1px solid var(--border)', fontSize:13 }}>
+                        <span style={{ marginRight:8 }}>☐ {item.name}</span>
+                        <span style={{ fontWeight:600, whiteSpace:'nowrap', color:'var(--text-primary)' }}>{item.label}</span>
                       </div>
                     ))}
                   </div>
                 ))}
-                <button className="btn btn-small" style={{ width:'100%', marginTop:8 }} onClick={() => {
+
+                {/* ── Vista secundária: por refeição (colapsável) ── */}
+                <div style={{ borderTop:'1px solid var(--border)', paddingTop:10, marginTop:4 }}>
+                  <button
+                    onClick={() => setShoppingByMealOpen(p => !p)}
+                    style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, color:'var(--text-secondary)', background:'none', border:'none', cursor:'pointer', padding:0, width:'100%' }}>
+                    <ChevronDown size={14} style={{ transform: shoppingByMealOpen ? 'rotate(180deg)' : 'none', transition:'transform .2s', flexShrink:0 }}/>
+                    {shoppingByMealOpen ? 'Ocultar' : 'Ver'} detalhamento por refeição
+                  </button>
+                  {shoppingByMealOpen && (
+                    <div style={{ marginTop:10 }}>
+                      {shoppingData.byMeal.map(group => (
+                        <div key={group.title} style={{ marginBottom:10 }}>
+                          <div style={{ fontSize:11, fontWeight:600, color:'var(--text-secondary)', marginBottom:4, textTransform:'uppercase', letterSpacing:'0.04em' }}>{group.title}</div>
+                          {group.items.map((item, i) => (
+                            <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:12, padding:'3px 0', color:'var(--text-secondary)', borderBottom:'1px solid var(--border)' }}>
+                              <span>{item.name}</span>
+                              <span style={{ whiteSpace:'nowrap', marginLeft:8 }}>{item.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Copiar */}
+                <button className="btn btn-small" style={{ width:'100%', marginTop:12 }} onClick={() => {
                   const lines = ['🛒 LISTA DE COMPRAS SEMANAL', '']
-                  shoppingListByMeal.forEach(g => {
-                    lines.push(`── ${g.title.toUpperCase()} ──`)
-                    g.items.forEach(it => lines.push(`☐ ${it.name}${it.weeklyG ? ` (×7 ≈ ${it.weeklyG.toLocaleString('pt-BR')}g)` : ''}`))
+                  shoppingData.byCategory.forEach(({ cat, items }) => {
+                    lines.push(`── ${cat.toUpperCase()} ──`)
+                    items.forEach(it => lines.push(`☐ ${it.name}: ${it.label}`))
                     lines.push('')
                   })
                   lines.push('Gerado pelo Meu Plano Completo')
