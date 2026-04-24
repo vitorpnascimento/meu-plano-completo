@@ -1288,11 +1288,19 @@ export default function Home() {
     setDietCodeLoading(false)
   }
 
-  const handleUseDiet = (dietData: any[]) => {
-    setMeals(dietData as Meal[])
-    save({ meals: dietData })
+  const handleUseDiet = (diet: SharedDiet, withGoals = false) => {
+    const newMeals = diet.dietData as Meal[]
+    setMeals(newMeals)
+    if (withGoals) {
+      const newGoals = { cals: diet.totalCals, p: diet.macros.p, c: diet.macros.c, f: diet.macros.g }
+      setUserGoals(newGoals)
+      save({ meals: newMeals, userGoals: newGoals })
+    } else {
+      save({ meals: newMeals })
+    }
     setDietCodeModal(false); setDietCodeInput(''); setDietCodePreview(null)
     setDietCodeError(''); setDietCodeConfirm(false)
+    setCommunityDietDetail(null)
   }
 
   const handlePublishToCommunity = async () => {
@@ -4631,8 +4639,8 @@ export default function Home() {
                       Ver detalhes
                     </button>
                     <button className="btn btn-small" style={{ width:'auto', flex:1 }}
-                      onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) handleUseDiet(diet.dietData) }}>
-                      Usar cardápio
+                      onClick={() => setCommunityDietDetail(diet)}>
+                      Ver / Usar
                     </button>
                     {diet.authorUid === authUser?.uid && (
                       <button className="config-reset-btn" style={{ color:'var(--error)', display:'flex', alignItems:'center', gap:3 }}
@@ -5637,17 +5645,25 @@ export default function Home() {
                   </div>
                 ))}
                 {!dietCodeConfirm ? (
-                  <button className="btn" style={{ marginTop:10, background:'var(--warning)', color:'#fff' }}
+                  <button className="btn" style={{ marginTop:10 }}
                     onClick={() => setDietCodeConfirm(true)}>
                     Usar este cardápio
                   </button>
                 ) : (
-                  <div>
-                    <div style={{ fontSize:12, color:'var(--error)', marginBottom:8 }}>Isso vai substituir seu cardápio atual. Confirmar?</div>
+                  <div style={{ marginTop:10 }}>
+                    <div style={{ fontSize:12, color:'var(--text-secondary)', marginBottom:8 }}>Isso vai substituir seu cardápio atual:</div>
                     <div style={{ display:'flex', gap:8 }}>
-                      <button className="btn btn-cancel" style={{ flex:1 }} onClick={() => setDietCodeConfirm(false)}>Cancelar</button>
-                      <button className="btn" style={{ flex:1 }} onClick={() => handleUseDiet(dietCodePreview.dietData)}>Confirmar</button>
+                      <button className="btn" style={{ flex:1 }}
+                        onClick={() => handleUseDiet(dietCodePreview)}>
+                        Só o cardápio
+                      </button>
+                      <button className="btn" style={{ flex:1, background:'var(--success)', color:'#fff' }}
+                        onClick={() => handleUseDiet(dietCodePreview, true)}>
+                        + metas<br/>
+                        <span style={{ fontSize:11, opacity:0.85 }}>{dietCodePreview.totalCals} kcal</span>
+                      </button>
                     </div>
+                    <button className="btn btn-cancel" style={{ marginTop:8 }} onClick={() => setDietCodeConfirm(false)}>Cancelar</button>
                   </div>
                 )}
               </div>
@@ -5684,10 +5700,18 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <button className="btn" style={{ marginBottom:8 }}
-              onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) { handleUseDiet(communityDietDetail.dietData); setCommunityDietDetail(null) } }}>
-              Usar este cardápio
-            </button>
+            <div style={{ fontSize:12, color:'var(--text-secondary)', marginBottom:8 }}>Isso vai substituir seu cardápio atual.</div>
+            <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+              <button className="btn" style={{ flex:1 }}
+                onClick={() => handleUseDiet(communityDietDetail)}>
+                Só o cardápio
+              </button>
+              <button className="btn" style={{ flex:1, background:'var(--success)', color:'#fff' }}
+                onClick={() => handleUseDiet(communityDietDetail, true)}>
+                Cardápio + metas<br/>
+                <span style={{ fontSize:11, opacity:0.85 }}>{communityDietDetail.totalCals} kcal</span>
+              </button>
+            </div>
             <button className="btn btn-cancel" onClick={() => setCommunityDietDetail(null)}>Fechar</button>
           </div>
         </div>
