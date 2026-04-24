@@ -1238,12 +1238,12 @@ export default function Home() {
     config:         { title:'Personalize seu plano',   sub:'Ajuste suas configurações ⚙️' },
   }
 
-  // Fase: greeting (10s) → brand (2s) → tab (permanente)
+  // Fase: greeting (6s) → brand (3.5s) → tab (permanente)
   useEffect(() => {
     if (!userProfile) return
     setHeaderPhase('greeting'); setHeaderKey(k => k + 1)
-    const t1 = setTimeout(() => { setHeaderPhase('brand');   setHeaderKey(k => k + 1) }, 10000)
-    const t2 = setTimeout(() => { setHeaderPhase('tab');     setHeaderKey(k => k + 1) }, 12000)
+    const t1 = setTimeout(() => { setHeaderPhase('brand');   setHeaderKey(k => k + 1) }, 6000)
+    const t2 = setTimeout(() => { setHeaderPhase('tab');     setHeaderKey(k => k + 1) }, 9500)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.username])
@@ -3952,7 +3952,7 @@ export default function Home() {
                   }
                 </button>
               )}
-              <div key={headerKey} className="header-msg" style={{ overflow: 'hidden' }}>
+              <div key={headerKey} className={`header-msg-${headerPhase}`} style={{ overflow: 'hidden' }}>
                 <h1 style={{ whiteSpace: 'nowrap' }}>
                   {headerPhase === 'greeting'
                     ? `Olá, ${userProfile?.displayName?.split(' ')[0] ?? 'você'}!`
