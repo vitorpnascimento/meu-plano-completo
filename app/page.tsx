@@ -2247,7 +2247,7 @@ export default function Home() {
                 <button className="onb-nav-back" onClick={() => setOnboardingScreenStep(2)}>
                   <ArrowLeft size={14}/> Voltar
                 </button>
-                <button className="btn onb-nav-next" onClick={handleGenerateDiet}
+                <button className="btn onb-nav-next" onClick={() => handleGenerateDiet()}
                   disabled={!dietTarget || parseInt(dietTarget) < MIN_SAFE_CALS}>
                   <Zap size={15}/> Gerar Dieta
                 </button>
@@ -4282,7 +4282,7 @@ export default function Home() {
                     <button className={`calc-obj-btn ${dietBudget ? 'active' : ''}`} onClick={() => setDietBudget(true)}><Coins size={14}/> Simples / Barato</button>
                   </div>
                 </div>
-                <button className="btn" style={{ marginTop:14 }} onClick={handleGenerateDiet}
+                <button className="btn" style={{ marginTop:14 }} onClick={() => handleGenerateDiet()}
                   disabled={!dietTarget || parseInt(dietTarget) < MIN_SAFE_CALS}>
                   <Zap size={15}/> Gerar Dieta Automaticamente
                 </button>
