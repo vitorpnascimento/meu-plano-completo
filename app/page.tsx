@@ -40,7 +40,7 @@ import LoginScreen from './components/LoginScreen'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
   getTodaySubstitutes, formatTacoItemName, naturalGrams, searchWithAI,
-  BUDGET_IDS, FOOD_UNITS,
+  BUDGET_IDS, FOOD_UNITS, DIET_VARIANT_COUNT,
   type TacoFood, type GeneratedItem, type GeneratedMeal,
 } from '../lib/taco-data'
 
@@ -808,8 +808,9 @@ export default function Home() {
 
   // ── Gerar Dieta ───────────────────────────────────────────────────────────────
   const [dietTarget,    setDietTarget]    = useState('')
-  const [dietBudget,    setDietBudget]    = useState(false)
-  const [generatedDiet, setGeneratedDiet] = useState<GeneratedMeal[] | null>(null)
+  const [dietBudget,      setDietBudget]      = useState(false)
+  const [dietVariantIdx,  setDietVariantIdx]  = useState(0)
+  const [generatedDiet,   setGeneratedDiet]   = useState<GeneratedMeal[] | null>(null)
   const [dietSubModal,  setDietSubModal]  = useState<{mealIdx:number; itemIdx:number} | null>(null)
   const [dietSubs,      setDietSubs]      = useState<TacoFood[]>([])
 
@@ -1669,14 +1670,20 @@ export default function Home() {
 
   // ── Ações: Gerar Dieta ────────────────────────────────────────────────────────
 
-  const handleGenerateDiet = () => {
+  const handleGenerateDiet = (variantIdx?: number) => {
     const target = parseInt(dietTarget)
     if (!target || target < MIN_SAFE_CALS) return
-    // Passa metas de macros para que o gerador escale as porções corretamente
+    const idx = variantIdx ?? 0
+    setDietVariantIdx(idx)
     const macroTargets = (userGoals.p > 0 && userGoals.c > 0 && userGoals.f > 0)
       ? { p: userGoals.p, c: userGoals.c, f: userGoals.f }
       : undefined
-    setGeneratedDiet(generateDiet(target, dietBudget, onboardingScreen ? onboardingMealIds : undefined, macroTargets))
+    setGeneratedDiet(generateDiet(target, dietBudget, onboardingScreen ? onboardingMealIds : undefined, macroTargets, idx))
+  }
+
+  const handleNextDietVariant = () => {
+    const next = (dietVariantIdx + 1) % DIET_VARIANT_COUNT
+    handleGenerateDiet(next)
   }
 
   const openDietSubModal = (mealIdx: number, itemIdx: number) => {
@@ -2258,11 +2265,17 @@ export default function Home() {
                       <span>C {generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.c, 0).toFixed(0)}g</span>
                       <span>G {generatedDiet.flatMap(m => m.items).reduce((s, i) => s + i.f, 0).toFixed(0)}g</span>
                     </div>
-                    {Math.abs(diffOnb) > 150 && (
-                      <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
-                        <RefreshCw size={13}/> Reajustar para meta
+                    <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap' }}>
+                      <button className="btn btn-small btn-cancel" style={{ flex:1 }} onClick={handleNextDietVariant}>
+                        <RefreshCw size={13}/> Ver outra opção
+                        <span style={{ opacity:0.6, marginLeft:4 }}>({dietVariantIdx + 1}/{DIET_VARIANT_COUNT})</span>
                       </button>
-                    )}
+                      {Math.abs(diffOnb) > 150 && (
+                        <button className="btn btn-small btn-cancel" style={{ flex:1 }} onClick={() => handleGenerateDiet(dietVariantIdx)}>
+                          <RefreshCw size={13}/> Reajustar para meta
+                        </button>
+                      )}
+                    </div>
                     <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
                       <CheckCircle2 size={15}/> Salvar e começar!
                     </button>
@@ -4295,11 +4308,17 @@ export default function Home() {
                           <span>C {totalC.toFixed(0)}g</span>
                           <span>G {totalF.toFixed(0)}g</span>
                         </div>
-                        {Math.abs(diff) > 150 && (
-                          <button className="btn btn-small btn-cancel" style={{ width:'auto', marginTop:6 }} onClick={handleGenerateDiet}>
-                            <RefreshCw size={13}/> Reajustar para meta
+                        <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap' }}>
+                          <button className="btn btn-small btn-cancel" style={{ flex:1 }} onClick={handleNextDietVariant}>
+                            <RefreshCw size={13}/> Ver outra opção
+                            <span style={{ opacity:0.6, marginLeft:4 }}>({dietVariantIdx + 1}/{DIET_VARIANT_COUNT})</span>
                           </button>
-                        )}
+                          {Math.abs(diff) > 150 && (
+                            <button className="btn btn-small btn-cancel" style={{ flex:1 }} onClick={() => handleGenerateDiet(dietVariantIdx)}>
+                              <RefreshCw size={13}/> Reajustar para meta
+                            </button>
+                          )}
+                        </div>
                         <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
                           <CheckCircle2 size={15}/> Salvar como Meu Cardápio
                         </button>

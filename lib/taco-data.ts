@@ -276,75 +276,233 @@ export async function searchFoodWithFallback(query: string): Promise<TacoFood | 
 
 /** Template de refeição: lista de {id do alimento TACO, share% das kcal da refeição} */
 type SlotDef = { id: number; share: number }
+type MealTemplate = { mealId: string; title: string; calShare: number; slots: SlotDef[] }
 
-const STD_TEMPLATES: { mealId: string; title: string; calShare: number; slots: SlotDef[] }[] = [
-  { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
-    { id:49, share:0.40 }, // Iogurte grego
-    { id:27, share:0.35 }, // Aveia
-    { id:63, share:0.25 }, // Morango
-  ]},
-  { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
-    { id:58, share:0.50 }, // Banana
-    { id:93, share:0.30 }, // Pasta amendoim
-    { id:63, share:0.20 }, // Morango
-  ]},
-  { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
-    { id:1,  share:0.40 }, // Frango grelhado
-    { id:24, share:0.28 }, // Arroz integral
-    { id:37, share:0.18 }, // Batata doce
-    { id:72, share:0.10 }, // Brócolis
-    { id:89, share:0.04 }, // Azeite
-  ]},
-  { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
-    { id:55, share:0.50 }, // Whey
-    { id:58, share:0.30 }, // Banana
-    { id:93, share:0.20 }, // Pasta amendoim
-  ]},
-  { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
-    { id:15, share:0.40 }, // Tilápia
-    { id:37, share:0.35 }, // Batata doce
-    { id:76, share:0.15 }, // Espinafre
-    { id:89, share:0.10 }, // Azeite
-  ]},
-  { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
-    { id:57, share:0.60 }, // Caseína
-    { id:27, share:0.40 }, // Aveia
-  ]},
+// ── 3 variações de dieta Standard (melhor qualidade) ──────────────────────────
+
+const STD_VARIANTS: MealTemplate[][] = [
+  // Variação 0 – clássica fitness
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:49, share:0.40 }, // Iogurte grego
+      { id:27, share:0.35 }, // Aveia
+      { id:63, share:0.25 }, // Morango
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:58, share:0.50 }, // Banana
+      { id:93, share:0.30 }, // Pasta amendoim
+      { id:63, share:0.20 }, // Morango
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:1,  share:0.40 }, // Frango grelhado
+      { id:24, share:0.28 }, // Arroz integral
+      { id:37, share:0.18 }, // Batata doce
+      { id:72, share:0.10 }, // Brócolis
+      { id:89, share:0.04 }, // Azeite
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:55, share:0.50 }, // Whey
+      { id:58, share:0.30 }, // Banana
+      { id:93, share:0.20 }, // Pasta amendoim
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:15, share:0.40 }, // Tilápia
+      { id:37, share:0.35 }, // Batata doce
+      { id:76, share:0.15 }, // Espinafre
+      { id:89, share:0.10 }, // Azeite
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:57, share:0.60 }, // Caseína
+      { id:27, share:0.40 }, // Aveia
+    ]},
+  ],
+  // Variação 1 – mediterrânea / peixe
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:20, share:0.35 }, // Ovo mexido
+      { id:26, share:0.30 }, // Pão integral
+      { id:51, share:0.20 }, // Queijo cottage
+      { id:69, share:0.15 }, // Kiwi
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:60, share:0.55 }, // Maçã
+      { id:97, share:0.45 }, // Amêndoas
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:14, share:0.40 }, // Salmão grelhado
+      { id:32, share:0.28 }, // Quinoa
+      { id:72, share:0.18 }, // Brócolis
+      { id:86, share:0.10 }, // Vagem
+      { id:89, share:0.04 }, // Azeite
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:49, share:0.50 }, // Iogurte grego
+      { id:30, share:0.30 }, // Granola
+      { id:63, share:0.20 }, // Morango
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:12, share:0.40 }, // Peru filé assado
+      { id:37, share:0.30 }, // Batata doce
+      { id:81, share:0.16 }, // Couve-flor
+      { id:89, share:0.14 }, // Azeite
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:55, share:0.55 }, // Whey
+      { id:47, share:0.45 }, // Leite desnatado
+    ]},
+  ],
+  // Variação 2 – massa e força
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:19, share:0.30 }, // Ovo cozido
+      { id:27, share:0.35 }, // Aveia
+      { id:58, share:0.20 }, // Banana
+      { id:46, share:0.15 }, // Leite integral
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:50, share:0.40 }, // Queijo mussarela
+      { id:26, share:0.35 }, // Pão integral
+      { id:60, share:0.25 }, // Maçã
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:5,  share:0.40 }, // Patinho grelhado
+      { id:28, share:0.28 }, // Macarrão
+      { id:73, share:0.18 }, // Cenoura
+      { id:79, share:0.10 }, // Couve
+      { id:89, share:0.04 }, // Azeite
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:55, share:0.45 }, // Whey
+      { id:58, share:0.30 }, // Banana
+      { id:93, share:0.15 }, // Pasta amendoim
+      { id:27, share:0.10 }, // Aveia
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:3,  share:0.40 }, // Frango peito assado
+      { id:24, share:0.28 }, // Arroz integral
+      { id:41, share:0.20 }, // Feijão preto
+      { id:79, share:0.12 }, // Couve
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:57, share:0.55 }, // Caseína
+      { id:51, share:0.45 }, // Queijo cottage
+    ]},
+  ],
 ]
 
-const BUDGET_TEMPLATES: typeof STD_TEMPLATES = [
-  { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
-    { id:19, share:0.40 }, // Ovo cozido
-    { id:25, share:0.40 }, // Pão francês
-    { id:58, share:0.20 }, // Banana
-  ]},
-  { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
-    { id:58, share:0.50 }, // Banana
-    { id:92, share:0.30 }, // Amendoim
-    { id:60, share:0.20 }, // Maçã
-  ]},
-  { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
-    { id:2,  share:0.38 }, // Frango cozido
-    { id:23, share:0.30 }, // Arroz branco
-    { id:40, share:0.22 }, // Feijão carioca
-    { id:73, share:0.10 }, // Cenoura
-  ]},
-  { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
-    { id:48, share:0.50 }, // Iogurte natural
-    { id:60, share:0.30 }, // Maçã
-    { id:92, share:0.20 }, // Amendoim
-  ]},
-  { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
-    { id:2,  share:0.40 }, // Frango cozido
-    { id:23, share:0.30 }, // Arroz branco
-    { id:41, share:0.20 }, // Feijão preto
-    { id:77, share:0.10 }, // Abobrinha
-  ]},
-  { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
-    { id:47, share:0.65 }, // Leite desnatado
-    { id:27, share:0.35 }, // Aveia
-  ]},
+// ── 3 variações de dieta Budget (simples / barato) ────────────────────────────
+
+const BUDGET_VARIANTS: MealTemplate[][] = [
+  // Variação 0 – clássica brasileira
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:19, share:0.40 }, // Ovo cozido
+      { id:25, share:0.40 }, // Pão francês
+      { id:58, share:0.20 }, // Banana
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:58, share:0.50 }, // Banana
+      { id:92, share:0.30 }, // Amendoim
+      { id:60, share:0.20 }, // Maçã
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:2,  share:0.38 }, // Frango cozido
+      { id:23, share:0.30 }, // Arroz branco
+      { id:40, share:0.22 }, // Feijão carioca
+      { id:73, share:0.10 }, // Cenoura
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:48, share:0.50 }, // Iogurte natural
+      { id:60, share:0.30 }, // Maçã
+      { id:92, share:0.20 }, // Amendoim
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:2,  share:0.40 }, // Frango cozido
+      { id:23, share:0.30 }, // Arroz branco
+      { id:41, share:0.20 }, // Feijão preto
+      { id:77, share:0.10 }, // Abobrinha
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:47, share:0.65 }, // Leite desnatado
+      { id:27, share:0.35 }, // Aveia
+    ]},
+  ],
+  // Variação 1 – ovo e carne moída
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:19, share:0.35 }, // Ovo cozido
+      { id:34, share:0.40 }, // Cuscuz
+      { id:58, share:0.25 }, // Banana
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:58, share:0.55 }, // Banana
+      { id:48, share:0.45 }, // Iogurte natural
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:11, share:0.38 }, // Carne moída refogada
+      { id:23, share:0.28 }, // Arroz branco
+      { id:41, share:0.22 }, // Feijão preto
+      { id:73, share:0.12 }, // Cenoura
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:19, share:0.40 }, // Ovo cozido
+      { id:92, share:0.35 }, // Amendoim
+      { id:60, share:0.25 }, // Maçã
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:4,  share:0.38 }, // Coxa de frango
+      { id:37, share:0.30 }, // Batata doce
+      { id:40, share:0.22 }, // Feijão carioca
+      { id:77, share:0.10 }, // Abobrinha
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:47, share:0.60 }, // Leite desnatado
+      { id:27, share:0.40 }, // Aveia
+    ]},
+  ],
+  // Variação 2 – atum e tapioca
+  [
+    { mealId:'cafe',         title:'Café da Manhã',    calShare:0.20, slots:[
+      { id:115,share:0.45 }, // Tapioca pronta
+      { id:20, share:0.35 }, // Ovo mexido
+      { id:61, share:0.20 }, // Laranja
+    ]},
+    { mealId:'lanche_manha', title:'Lanche da Manhã',  calShare:0.10, slots:[
+      { id:58, share:0.55 }, // Banana
+      { id:92, share:0.45 }, // Amendoim
+    ]},
+    { mealId:'almoco',       title:'Almoço',            calShare:0.35, slots:[
+      { id:13, share:0.38 }, // Atum em água
+      { id:23, share:0.28 }, // Arroz branco
+      { id:41, share:0.20 }, // Feijão preto
+      { id:74, share:0.10 }, // Tomate
+      { id:90, share:0.04 }, // Óleo de soja
+    ]},
+    { mealId:'lanche',       title:'Lanche',            calShare:0.15, slots:[
+      { id:99, share:0.50 }, // Iogurte desnatado
+      { id:58, share:0.35 }, // Banana
+      { id:104,share:0.15 }, // Mel
+    ]},
+    { mealId:'jantar',       title:'Jantar',            calShare:0.25, slots:[
+      { id:2,  share:0.38 }, // Frango cozido
+      { id:38, share:0.28 }, // Mandioca
+      { id:40, share:0.22 }, // Feijão carioca
+      { id:73, share:0.12 }, // Cenoura
+    ]},
+    { mealId:'ceia',         title:'Ceia',              calShare:0.05, slots:[
+      { id:47, share:0.60 }, // Leite desnatado
+      { id:27, share:0.40 }, // Aveia
+    ]},
+  ],
 ]
+
+export const DIET_VARIANT_COUNT = 3
+
+/** Seleciona os templates corretos para a variação pedida */
+function getTemplates(preferBudget: boolean, variantIndex: number): MealTemplate[] {
+  const variants = preferBudget ? BUDGET_VARIANTS : STD_VARIANTS
+  return variants[variantIndex % variants.length]
+}
 
 /** Limite máximo de unidades por refeição para alimentos com porção natural.
  *  Evita resultados absurdos como "32 morangos" na geração automática de dieta. */
@@ -471,14 +629,16 @@ function scaleDietToMacros(
 
 /** Gera uma dieta para a meta calórica informada.
  *  - `mealIds`: filtra e redistribui proporcionalmente as kcal
- *  - `macroTargets`: reescala porções para respeitar metas de P/C/G */
+ *  - `macroTargets`: reescala porções para respeitar metas de P/C/G
+ *  - `variantIndex`: qual das 3 variações usar (0–2); padrão 0 */
 export function generateDiet(
   targetCals:   number,
   preferBudget: boolean,
   mealIds?:     string[],
   macroTargets?: { p: number; c: number; f: number },
+  variantIndex?: number,
 ): GeneratedDiet {
-  const allTemplates = preferBudget ? BUDGET_TEMPLATES : STD_TEMPLATES
+  const allTemplates = getTemplates(preferBudget, variantIndex ?? 0)
   const templates = mealIds
     ? allTemplates.filter(t => mealIds.includes(t.mealId))
     : allTemplates
