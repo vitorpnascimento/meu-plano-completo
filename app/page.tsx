@@ -235,9 +235,6 @@ const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
   55: { label: 'doses (20g)',  size: 20  },
   56: { label: 'doses (20g)',  size: 20  },
   57: { label: 'doses (20g)',  size: 20  },
-  // Pão de forma (fatia ≈ 25g)
-  26:  { label: 'fatias',       size: 25  },  // Pão integral
-  113: { label: 'fatias',       size: 25  },  // Pão de forma integral
   // Frutas contáveis
   58: { label: 'bananas',      size: 100 },  // Banana prata (1 un ≈ 100g)
   59: { label: 'bananas',      size: 80  },  // Banana nanica (1 un ≈ 80g)
@@ -294,8 +291,7 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
       return `${kg} kg`
     }
     const unitName = pack.label.replace(/\s*\(.*?\)/, '').trim()
-    const totalG = qty * pack.size
-    return `${qty} ${unitName} (${totalG.toLocaleString('pt-BR')}g)`
+    return `${qty} ${unitName} (${weeklyG.toLocaleString('pt-BR')}g)`
   }
   if (weeklyG >= 1000) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
   return `${weeklyG.toLocaleString('pt-BR')} g`
