@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Activity, Eye, EyeOff } from 'lucide-react'
 import { createAccount, loginWithEmail } from '../../lib/firebase'
 
 type View = 'login' | 'register'
@@ -20,14 +21,15 @@ function parseFirebaseError(code: string): string {
 }
 
 export default function LoginScreen() {
-  const [view,     setView]     = useState<View>('login')
-  const [email,    setEmail]    = useState('')
-  const [password, setPassword] = useState('')
-  const [error,    setError]    = useState('')
-  const [loading,  setLoading]  = useState(false)
+  const [view,        setView]        = useState<View>('login')
+  const [email,       setEmail]       = useState('')
+  const [password,    setPassword]    = useState('')
+  const [showPass,    setShowPass]    = useState(false)
+  const [error,       setError]       = useState('')
+  const [loading,     setLoading]     = useState(false)
 
   const switchView = (v: View) => {
-    setView(v); setError(''); setEmail(''); setPassword('')
+    setView(v); setError(''); setEmail(''); setPassword(''); setShowPass(false)
   }
 
   const handleSubmit = async () => {
@@ -36,7 +38,6 @@ export default function LoginScreen() {
     try {
       if (view === 'register') await createAccount(email.trim(), password)
       else                     await loginWithEmail(email.trim(), password)
-      // onAuthStateChanged no page.tsx cuida do resto
     } catch (e: any) {
       setError(parseFirebaseError(e.code || ''))
     } finally {
@@ -50,7 +51,9 @@ export default function LoginScreen() {
     <div className="login-screen">
       <div className="login-card">
 
-        <div className="login-logo">💪</div>
+        <div className="login-logo">
+          <Activity size={48} color="var(--primary)" strokeWidth={1.8} />
+        </div>
         <div className="login-brand">Meu Plano</div>
         <div className="login-tagline">Acompanhamento de Dieta &amp; Treino</div>
 
@@ -83,15 +86,31 @@ export default function LoginScreen() {
           />
 
           <label className="login-label">Senha</label>
-          <input
-            type="password"
-            className="login-input"
-            placeholder={view === 'register' ? 'Mínimo 6 caracteres' : '••••••••'}
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={onKey}
-            autoComplete={view === 'register' ? 'new-password' : 'current-password'}
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showPass ? 'text' : 'password'}
+              className="login-input"
+              style={{ paddingRight: 40, width: '100%', boxSizing: 'border-box' }}
+              placeholder={view === 'register' ? 'Mínimo 6 caracteres' : '••••••••'}
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={onKey}
+              autoComplete={view === 'register' ? 'new-password' : 'current-password'}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(s => !s)}
+              style={{
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+                color: 'var(--text-secondary)', display: 'flex', alignItems: 'center',
+              }}
+              tabIndex={-1}
+              aria-label={showPass ? 'Ocultar senha' : 'Mostrar senha'}
+            >
+              {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
 
           {error && (
             <div className="login-error">{error}</div>
@@ -106,8 +125,8 @@ export default function LoginScreen() {
             {loading
               ? 'Aguarde...'
               : view === 'register'
-              ? '✨ Criar Conta'
-              : '→ Entrar'}
+              ? 'Criar Conta'
+              : 'Entrar'}
           </button>
         </div>
 
