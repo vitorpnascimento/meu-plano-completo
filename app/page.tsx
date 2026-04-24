@@ -348,16 +348,20 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
       const kg = (weeklyG / 1000).toFixed(1).replace('.', ',')
       return `${kg} kg`
     }
-    return `${qty} ${pack.label}`
+    const unitName = pack.label.replace(/\s*\(.*?\)/, '').trim()
+    return `${qty} ${unitName} (${weeklyG.toLocaleString('pt-BR')}g)`
   }
   if (weeklyG >= 900) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
   return `${weeklyG.toLocaleString('pt-BR')} g`
 }
 
-/** Normaliza nome para chave de deduplicação: remove parênteses, acentos, pontuação e espaços extras */
+/** Normaliza nome para chave de deduplicação.
+ *  Remove tudo a partir do primeiro parêntese (quantidade, unidade, gramas)
+ *  e depois limpa pontuação, acentos e espaços. */
 function normShopKey(name: string): string {
   return name
-    .replace(/\(.*?\)/g, '')          // remove tudo entre parênteses: "(2un)", "(1 un)", "(13 un)"
+    .replace(/\s*\(.*/, '')           // remove a partir do primeiro "(" até o fim
+    .replace(/\s+\d+\s*g?\s*$/i, '')  // remove número solto no final: "50g", "100"
     .toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[,.()\-]/g, ' ')
