@@ -2152,7 +2152,7 @@ export default function Home() {
 
     // Agrupa por categoria na ordem definida
     const byCat = new Map<string, { name: string; label: string; inMeals: string[] }[]>()
-    for (const item of agg.values()) {
+    for (const item of Array.from(agg.values())) {
       const entry = { name: item.baseName, label: toShoppingLabel(item.weeklyG, item.tacoId), inMeals: item.inMeals }
       const arr   = byCat.get(item.cat) ?? []
       arr.push(entry)
