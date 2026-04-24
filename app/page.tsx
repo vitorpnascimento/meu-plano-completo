@@ -4555,9 +4555,9 @@ export default function Home() {
                 <span className="config-section-label"><Users size={15}/> Cardápios da Comunidade</span>
                 <span className="config-section-desc">Cardápios públicos compartilhados por outros usuários</span>
               </div>
-              <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
+              <button className="config-reset-btn" style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--primary)' }}
                 onClick={async () => { setCommunityDietsReady(false); const [d,s] = await Promise.all([loadPublicDiets(),loadPublicSubstitutions()]); setCommunityDiets(d); setCommunitySubs(s); setCommunityDietsReady(true) }}>
-                <RefreshCw size={13}/>
+                <RefreshCw size={13}/> Atualizar
               </button>
             </div>
             <div style={{ padding: '0 4px 12px' }}>

@@ -314,11 +314,12 @@ export async function loadPublicDiets(): Promise<SharedDiet[]> {
     const q = query(
       collection(_db, 'sharedDiets'),
       where('isPublic', '==', true),
-      orderBy('createdAt', 'desc'),
       limit(20),
     )
     const snap = await getDocs(q)
-    return snap.docs.map(d => d.data() as SharedDiet)
+    return snap.docs
+      .map(d => d.data() as SharedDiet)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   } catch {
     return []
   }
@@ -353,13 +354,11 @@ export async function shareSubstitution(
 export async function loadPublicSubstitutions(): Promise<CommunitySubstitution[]> {
   if (!init() || !_db) return []
   try {
-    const q = query(
-      collection(_db, 'communitySubstitutions'),
-      orderBy('createdAt', 'desc'),
-      limit(30),
-    )
+    const q = query(collection(_db, 'communitySubstitutions'), limit(30))
     const snap = await getDocs(q)
-    return snap.docs.map(d => d.data() as CommunitySubstitution)
+    return snap.docs
+      .map(d => d.data() as CommunitySubstitution)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   } catch {
     return []
   }
