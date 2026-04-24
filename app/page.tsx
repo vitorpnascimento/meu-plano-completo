@@ -2103,17 +2103,8 @@ export default function Home() {
     for (const meal of meals) {
       for (const item of (meal.items ?? [])) {
         const { baseName, grams } = parseItemName(item.name)
-        // Se não há gramas no nome, estima pelas kcal do item + densidade TACO
-        let dailyG = grams
-        if (dailyG === null) {
-          const tacoFood = TACO.find(f => f.id === getValidTacoMatch(baseName)?.id)
-          if (tacoFood && tacoFood.kcal > 0 && item.kcal > 0) {
-            dailyG = Math.round(item.kcal / tacoFood.kcal * 100)
-          } else {
-            dailyG = 100 // fallback conservador
-          }
-        }
-        const weeklyG   = dailyG * 7
+        if (grams === null) continue  // sem quantidade explícita no nome → ignorar na agregação
+        const weeklyG = grams * 7
         const tacoMatch = getValidTacoMatch(baseName)
         const tacoId    = tacoMatch?.id ?? null
         const cat       = TACO_CAT_TO_SHOP[tacoMatch?.cat ?? ''] ?? 'Outros'
