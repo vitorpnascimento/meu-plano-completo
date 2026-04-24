@@ -4679,9 +4679,32 @@ export default function Home() {
                     <CommunityAvatar av={food.authorAvatar} size={28} />
                     <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{food.authorUsername}</span>
                   </div>
-                  <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{food.name}</div>
-                  <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
-                    {food.kcal} kcal · P{food.p}g · C{food.c}g · G{food.f}g · {food.grams}g
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                    <div>
+                      <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{food.name}</div>
+                      <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
+                        {food.kcal} kcal · P{food.p}g · C{food.c}g · G{food.f}g · {food.grams}g
+                      </div>
+                    </div>
+                    {firebaseConfigured && authUser && (
+                      <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
+                        onClick={() => {
+                          const newFood: CustomFood = {
+                            id:    `cf_${Date.now()}`,
+                            name:  food.name,
+                            kcal:  food.kcal,
+                            p:     food.p,
+                            c:     food.c,
+                            f:     food.f,
+                            grams: food.grams,
+                          }
+                          const updated = [...customFoods, newFood]
+                          setCustomFoods(updated)
+                          save({ customFoods: updated })
+                        }}>
+                        + Adicionar
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
