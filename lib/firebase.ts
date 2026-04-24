@@ -335,6 +335,60 @@ export async function loadPublicDiets(): Promise<SharedDiet[]> {
   }
 }
 
+// ── Community Foods ───────────────────────────────────────────────────────────
+
+export interface CommunityFood {
+  id:            string
+  authorUid:     string
+  authorUsername:string
+  authorAvatar:  { type: 'preset'|'upload'; preset?: string; url?: string }
+  name:          string
+  kcal:          number
+  p:             number
+  c:             number
+  f:             number
+  grams:         number
+  createdAt:     string
+}
+
+export async function shareCustomFood(
+  uid: string,
+  profile: UserProfile,
+  food: { name: string; kcal: number; p: number; c: number; f: number; grams: number },
+): Promise<boolean> {
+  if (!init() || !_db || !uid) return false
+  try {
+    const id = `${uid}_${Date.now()}`
+    const avatarData: Record<string, any> = { type: profile.avatarType }
+    if (profile.avatarPreset) avatarData.preset = profile.avatarPreset
+    if (profile.avatarType === 'upload' && profile.avatarUrl) avatarData.url = profile.avatarUrl
+    await setDoc(doc(_db, 'communityFoods', id), {
+      id,
+      authorUid:      uid,
+      authorUsername: profile.username,
+      authorAvatar:   avatarData,
+      ...food,
+      createdAt: new Date().toISOString(),
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function loadPublicCustomFoods(): Promise<CommunityFood[]> {
+  if (!init() || !_db) return []
+  try {
+    const q = query(collection(_db, 'communityFoods'), limit(30))
+    const snap = await getDocs(q)
+    return snap.docs
+      .map(d => d.data() as CommunityFood)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  } catch {
+    return []
+  }
+}
+
 export async function shareSubstitution(
   uid: string,
   profile: UserProfile,

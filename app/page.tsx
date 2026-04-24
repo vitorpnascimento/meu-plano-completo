@@ -46,9 +46,12 @@ import {
   deleteSharedDiet,
   shareSubstitution,
   loadPublicSubstitutions,
+  shareCustomFood,
+  loadPublicCustomFoods,
   type UserProfile,
   type SharedDiet,
   type CommunitySubstitution,
+  type CommunityFood,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
 import ProfileSetup from './components/ProfileSetup'
@@ -939,6 +942,11 @@ export default function Home() {
   const [communityDietsReady, setCommunityDietsReady] = useState(false)
   const [communityDietDetail, setCommunityDietDetail] = useState<SharedDiet|null>(null)
   const [communitySubs,      setCommunitySubs]      = useState<CommunitySubstitution[]>([])
+  const [communityFoods,     setCommunityFoods]     = useState<CommunityFood[]>([])
+  const [showFoodPicker,     setShowFoodPicker]     = useState(false)
+  const [foodPickerQuery,    setFoodPickerQuery]    = useState('')
+  const [foodPickerLoading,  setFoodPickerLoading]  = useState(false)
+  const [foodPickerDone,     setFoodPickerDone]     = useState<string|null>(null)
   const [shareSubItem,   setShareSubItem]   = useState<null|{original:MealItem;sub:SubOption}>(null)
   const [shareSubReason, setShareSubReason] = useState('')
   const [shareSubDone,   setShareSubDone]   = useState(false)
@@ -1309,9 +1317,9 @@ export default function Home() {
   const handleLoadCommunity = async () => {
     if (communityDietsReady) return
     setCommunityDietsReady(true)
-    const [diets, subs] = await Promise.all([loadPublicDiets(), loadPublicSubstitutions()])
+    const [diets, foods] = await Promise.all([loadPublicDiets(), loadPublicCustomFoods()])
     setCommunityDiets(diets)
-    setCommunitySubs(subs)
+    setCommunityFoods(foods)
   }
 
   const handleShareSub = async () => {
@@ -4576,18 +4584,14 @@ export default function Home() {
                 <span className="config-section-desc">Cardápios públicos compartilhados por outros usuários</span>
               </div>
               <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-                {firebaseConfigured && authUser && userProfile && (<>
-                  <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--text-secondary)' }}
-                    onClick={handleShareDiet} disabled={shareDietLoading}>
-                    <Share2 size={13}/> Compartilhar
-                  </button>
+                {firebaseConfigured && authUser && userProfile && (
                   <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--primary)' }}
                     onClick={handlePublishToCommunity} disabled={shareDietLoading}>
                     <Users size={13}/> Publicar
                   </button>
-                </>)}
+                )}
                 <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--text-secondary)' }}
-                  onClick={async () => { setCommunityDietsReady(false); const [d,s] = await Promise.all([loadPublicDiets(),loadPublicSubstitutions()]); setCommunityDiets(d); setCommunitySubs(s); setCommunityDietsReady(true) }}>
+                  onClick={async () => { setCommunityDietsReady(false); const [d,f] = await Promise.all([loadPublicDiets(),loadPublicCustomFoods()]); setCommunityDiets(d); setCommunityFoods(f); setCommunityDietsReady(true) }}>
                   <RefreshCw size={13}/>
                 </button>
               </div>
@@ -4646,47 +4650,39 @@ export default function Home() {
             </div>
           </div>
 
-          {/* ── Substituições da Comunidade ── */}
+          {/* ── Meus Alimentos da Comunidade ── */}
           <div className="config-section">
             <div className="config-section-header" style={{ cursor:'default' }}>
               <div className="config-section-title-group">
-                <span className="config-section-label"><ArrowLeftRight size={15}/> Substituições da Comunidade</span>
-                <span className="config-section-desc">Trocas sugeridas por outros usuários</span>
+                <span className="config-section-label"><BookMarked size={15}/> Meus Alimentos da Comunidade</span>
+                <span className="config-section-desc">Alimentos publicados por usuários</span>
               </div>
-              {firebaseConfigured && authUser && userProfile && (
+              {firebaseConfigured && authUser && userProfile && customFoods.length > 0 && (
                 <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--primary)', flexShrink:0 }}
-                  onClick={() => { setShareSubItem(null); setShareSubReason(''); setShareSubDone(false) }}>
-                  <Share2 size={13}/> Compartilhar substituição
+                  onClick={() => { setShowFoodPicker(true); setFoodPickerQuery(''); setFoodPickerDone(null) }}>
+                  <Users size={13}/> Publicar
                 </button>
               )}
             </div>
             <div style={{ padding: '0 4px 12px' }}>
-              {communityDietsReady && communitySubs.length === 0 && (
+              {communityDietsReady && communityFoods.length === 0 && (
                 <div style={{ textAlign:'center', color:'var(--text-secondary)', padding:'24px 0', fontSize:13 }}>
-                  Nenhuma substituição compartilhada ainda.
+                  Nenhum alimento publicado ainda.
                 </div>
               )}
-              {communitySubs.map(sub => (
-                <div key={sub.id} style={{
+              {communityFoods.map(food => (
+                <div key={food.id} style={{
                   background:'var(--surface-2)', borderRadius:12, padding:'12px 14px',
                   marginBottom:10, border:'1px solid var(--border)',
                 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                    <CommunityAvatar av={sub.authorAvatar} size={28} />
-                    <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{sub.authorUsername}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                    <CommunityAvatar av={food.authorAvatar} size={28} />
+                    <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{food.authorUsername}</span>
                   </div>
-                  <div style={{ fontSize:13, marginBottom:4 }}>
-                    <span style={{ fontWeight:600 }}>{sub.originalFood}</span>
-                    <span style={{ color:'var(--text-secondary)', margin:'0 6px' }}>→</span>
-                    <span style={{ fontWeight:600, color:'var(--primary)' }}>{sub.substituteFood}</span>
+                  <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{food.name}</div>
+                  <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
+                    {food.kcal} kcal · P{food.p}g · C{food.c}g · G{food.f}g · {food.grams}g
                   </div>
-                  <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:4 }}>
-                    Original: {sub.originalMacros.kcal} kcal · P{sub.originalMacros.p}g C{sub.originalMacros.c}g G{sub.originalMacros.f}g
-                  </div>
-                  <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom: sub.reason ? 6 : 0 }}>
-                    Substituto: {sub.substituteMacros.kcal} kcal · P{sub.substituteMacros.p}g C{sub.substituteMacros.c}g G{sub.substituteMacros.f}g
-                  </div>
-                  {sub.reason && <div style={{ fontSize:12, fontStyle:'italic', color:'var(--text-secondary)' }}>"{sub.reason}"</div>}
                 </div>
               ))}
             </div>
@@ -5670,6 +5666,73 @@ export default function Home() {
               Usar este cardápio
             </button>
             <button className="btn btn-cancel" onClick={() => setCommunityDietDetail(null)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Publicar Alimento na Comunidade ══ */}
+      {showFoodPicker && (
+        <div className="modal-overlay" onClick={() => setShowFoodPicker(false)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div className="modal-title"><BookMarked size={16}/> Publicar alimento na comunidade</div>
+
+            {foodPickerDone ? (
+              <div style={{ textAlign:'center', padding:'16px 0' }}>
+                <div style={{ fontSize:32, marginBottom:8 }}>✓</div>
+                <div style={{ fontWeight:600, marginBottom:4 }}>Publicado!</div>
+                <div style={{ fontSize:13, color:'var(--text-secondary)' }}>"{foodPickerDone}" já está na comunidade.</div>
+                <button className="btn" style={{ marginTop:16 }} onClick={() => setShowFoodPicker(false)}>Fechar</button>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  className="login-input"
+                  placeholder="Buscar nos meus alimentos..."
+                  value={foodPickerQuery}
+                  autoFocus
+                  onChange={e => setFoodPickerQuery(e.target.value)}
+                  style={{ marginBottom:10 }}
+                />
+                {(() => {
+                  const q = foodPickerQuery.trim().toLowerCase()
+                  const filtered = q ? customFoods.filter(f => f.name.toLowerCase().includes(q)) : customFoods
+                  if (filtered.length === 0) return (
+                    <div style={{ textAlign:'center', color:'var(--text-secondary)', padding:'16px 0', fontSize:13 }}>
+                      {customFoods.length === 0 ? 'Nenhum alimento salvo. Adicione alimentos em Meu Cardápio.' : 'Nenhum resultado.'}
+                    </div>
+                  )
+                  return (
+                    <div className="my-foods-list">
+                      {filtered.map(cf => (
+                        <div key={cf.id} className="my-foods-item">
+                          <div className="my-foods-info">
+                            <div className="my-foods-name">{cf.name}</div>
+                            <div className="my-foods-macros">{cf.kcal} kcal · P{cf.p}g · C{cf.c}g · G{cf.f}g · {cf.grams}g</div>
+                          </div>
+                          <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
+                            disabled={foodPickerLoading}
+                            onClick={async () => {
+                              if (!authUser || !userProfile) return
+                              setFoodPickerLoading(true)
+                              await shareCustomFood(authUser.uid, userProfile, {
+                                name: cf.name, kcal: cf.kcal, p: cf.p, c: cf.c, f: cf.f, grams: cf.grams ?? 100,
+                              })
+                              const foods = await loadPublicCustomFoods()
+                              setCommunityFoods(foods)
+                              setFoodPickerDone(cf.name)
+                              setFoodPickerLoading(false)
+                            }}>
+                            Publicar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+                <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setShowFoodPicker(false)}>Fechar</button>
+              </>
+            )}
           </div>
         </div>
       )}
