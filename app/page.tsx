@@ -874,8 +874,8 @@ export default function Home() {
   const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
   // ── Header animado ───────────────────────────────────────────────────────────
-  const [headerMsgIdx, setHeaderMsgIdx] = useState(0)
-  const [headerFade,   setHeaderFade]   = useState(true)
+  const [headerPhase, setHeaderPhase] = useState<'greeting'|'brand'|'tab'>('greeting')
+  const [headerKey,   setHeaderKey]   = useState(0)
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [isDark, setIsDark] = useState(false) // light por padrão
@@ -1229,35 +1229,30 @@ export default function Home() {
     return () => clearTimeout(t)
   }, [onboardingStep])
 
-  // Mensagens do header
-  const headerMessages = useMemo(() => {
-    const tab: Record<string, {title:string;sub:string}> = {
-      hoje:           { title:'Bora registrar!',     sub:'Marque suas refeições'  },
-      peso:           { title:'Acompanhe seu peso',  sub:'Progresso consistente'  },
-      'estatísticas': { title:'Sua evolução',        sub:'Dados e tendências'     },
-      comunidade:     { title:'Comunidade',          sub:'Explore cardápios'      },
-      config:         { title:'Configurações',       sub:'Personalize seu plano'  },
-    }
-    if (!userProfile) return [{ title:'Meu Plano', sub:'Dieta · Treino · Progresso' }]
-    const first = userProfile.displayName.split(' ')[0]
-    return [
-      { title:`Olá, ${first}!`,  sub:`@${userProfile.username}`          },
-      tab[activeTab] ?? { title:'Meu Plano', sub:'Consistência vence tudo!' },
-      { title:'Meu Plano',       sub:'Dieta · Treino · Progresso'        },
-    ]
-  }, [userProfile, activeTab])
+  // Mensagens do header por aba
+  const TAB_MSGS: Record<string, {title:string; sub:string}> = {
+    hoje:           { title:'Registre suas refeições', sub:'Cada refeição conta 💪'       },
+    peso:           { title:'Acompanhe seu peso',      sub:'Progresso consistente ⚖️'     },
+    'estatísticas': { title:'Sua evolução',            sub:'Dados e tendências 📊'        },
+    comunidade:     { title:'Explore a comunidade',   sub:'Cardápios e alimentos 👥'     },
+    config:         { title:'Personalize seu plano',   sub:'Ajuste suas configurações ⚙️' },
+  }
 
+  // Fase: greeting (10s) → brand (2s) → tab (permanente)
   useEffect(() => {
-    setHeaderMsgIdx(0); setHeaderFade(true)
+    if (!userProfile) return
+    setHeaderPhase('greeting'); setHeaderKey(k => k + 1)
+    const t1 = setTimeout(() => { setHeaderPhase('brand');   setHeaderKey(k => k + 1) }, 10000)
+    const t2 = setTimeout(() => { setHeaderPhase('tab');     setHeaderKey(k => k + 1) }, 12000)
+    return () => { clearTimeout(t1); clearTimeout(t2) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.uid])
+
+  // Animação ao mudar de aba (só após fase 'tab')
+  useEffect(() => {
+    if (headerPhase === 'tab') setHeaderKey(k => k + 1)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setHeaderFade(false)
-      setTimeout(() => { setHeaderMsgIdx(i => (i + 1) % headerMessages.length); setHeaderFade(true) }, 300)
-    }, 3500)
-    return () => clearInterval(t)
-  }, [headerMessages.length])
 
   useEffect(() => {
     if (activeTab === 'comunidade') handleLoadCommunity()
@@ -3957,13 +3952,21 @@ export default function Home() {
                   }
                 </button>
               )}
-              <div style={{ overflow: 'hidden' }}>
-                <h1 style={{ opacity: headerFade ? 1 : 0, transition: 'opacity 0.3s ease', whiteSpace: 'nowrap' }}>
-                  {headerMessages[headerMsgIdx]?.title ?? 'Meu Plano'}
+              <div key={headerKey} className="header-msg" style={{ overflow: 'hidden' }}>
+                <h1 style={{ whiteSpace: 'nowrap' }}>
+                  {headerPhase === 'greeting'
+                    ? `Olá, ${userProfile?.displayName?.split(' ')[0] ?? 'você'}!`
+                    : headerPhase === 'brand'
+                    ? 'Meu Plano'
+                    : (TAB_MSGS[activeTab]?.title ?? 'Meu Plano')}
                   {' '}<span className="brand-dot" />
                 </h1>
-                <div className="subtitle" style={{ opacity: headerFade ? 1 : 0, transition: 'opacity 0.3s ease', whiteSpace: 'nowrap' }}>
-                  {headerMessages[headerMsgIdx]?.sub ?? 'Dieta · Treino · Progresso'}
+                <div className="subtitle" style={{ whiteSpace: 'nowrap' }}>
+                  {headerPhase === 'greeting'
+                    ? `@${userProfile?.username ?? ''}`
+                    : headerPhase === 'brand'
+                    ? 'Dieta · Treino · Progresso'
+                    : (TAB_MSGS[activeTab]?.sub ?? 'Dieta · Treino · Progresso')}
                 </div>
               </div>
             </div>
