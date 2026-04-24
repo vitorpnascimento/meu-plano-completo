@@ -158,7 +158,7 @@ export async function checkUsernameAvailable(username: string, currentUid?: stri
     if (!snap.exists()) return true
     return snap.data()?.uid === currentUid // disponível se pertence ao próprio usuário
   } catch {
-    return false
+    return true
   }
 }
 
