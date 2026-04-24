@@ -41,7 +41,7 @@ import LoginScreen from './components/LoginScreen'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
   getTodaySubstitutes, formatTacoItemName, naturalGrams, searchWithAI,
-  BUDGET_IDS, FOOD_UNITS, DIET_VARIANT_COUNT,
+  BUDGET_IDS, FOOD_UNITS, DIET_VARIANT_COUNT, TACO,
   type TacoFood, type GeneratedItem, type GeneratedMeal,
 } from '../lib/taco-data'
 
@@ -269,14 +269,18 @@ const SHOP_CAT_ORDER = [
   'Suplementos', 'Outros',
 ]
 
-/** Extrai nome-base e gramas de um nome de item (ex: "Ovo cozido (2 un) 100g" → base + 100g) */
+/** Extrai nome-base e gramas de um nome de item.
+ *  Suporta: "Ovo cozido (2 un) 100g", "Frango 180g", "Requeijão (60g)" */
 function parseItemName(fullName: string): { baseName: string; grams: number | null } {
-  // Padrão com unidade: "Ovo cozido (2 un) 100g"
+  // "Name (Xword) Yg" — unidade entre parens, gramas fora
   const mUnit = fullName.match(/^(.+?)\s*\(\d+\s*\w+\)\s*(\d+)g$/)
   if (mUnit) return { baseName: mUnit[1].trim(), grams: parseInt(mUnit[2]) }
-  // Padrão simples: "Frango grelhado 180g"
+  // "Name Yg" — gramas simples no final
   const mSimple = fullName.match(/^(.+?)\s+(\d+)g$/)
   if (mSimple) return { baseName: mSimple[1].trim(), grams: parseInt(mSimple[2]) }
+  // "Name (Yg)" — gramas dentro de parênteses
+  const mParen = fullName.match(/^(.+?)\s*\((\d+)\s*g\)$/)
+  if (mParen) return { baseName: mParen[1].trim(), grams: parseInt(mParen[2]) }
   return { baseName: fullName.trim(), grams: null }
 }
 
@@ -2103,7 +2107,16 @@ export default function Home() {
     for (const meal of meals) {
       for (const item of (meal.items ?? [])) {
         const { baseName, grams } = parseItemName(item.name)
-        const dailyG    = grams ?? 100
+        // Se não há gramas no nome, estima pelas kcal do item + densidade TACO
+        let dailyG = grams
+        if (dailyG === null) {
+          const tacoFood = TACO.find(f => f.id === getValidTacoMatch(baseName)?.id)
+          if (tacoFood && tacoFood.kcal > 0 && item.kcal > 0) {
+            dailyG = Math.round(item.kcal / tacoFood.kcal * 100)
+          } else {
+            dailyG = 100 // fallback conservador
+          }
+        }
         const weeklyG   = dailyG * 7
         const tacoMatch = getValidTacoMatch(baseName)
         const tacoId    = tacoMatch?.id ?? null
@@ -2140,7 +2153,16 @@ export default function Home() {
         items: (m.items ?? []).map(item => {
           const { baseName, grams } = parseItemName(item.name)
           const tacoId = getValidTacoMatch(baseName)?.id ?? null
-          const label  = toShoppingLabel((grams ?? 100) * 7, tacoId)
+          let dailyG = grams
+          if (dailyG === null) {
+            const tacoFood = TACO.find(f => f.id === tacoId)
+            if (tacoFood && tacoFood.kcal > 0 && item.kcal > 0) {
+              dailyG = Math.round(item.kcal / tacoFood.kcal * 100)
+            } else {
+              dailyG = 100
+            }
+          }
+          const label = toShoppingLabel(dailyG * 7, tacoId)
           return { name: baseName, label }
         }),
       }))
