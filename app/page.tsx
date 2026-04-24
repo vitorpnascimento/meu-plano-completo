@@ -290,7 +290,8 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
       return `${kg} kg`
     }
     const unitName = pack.label.replace(/\s*\(.*?\)/, '').trim()
-    return `${qty} ${unitName} (${weeklyG.toLocaleString('pt-BR')}g)`
+    const totalG = qty * pack.size
+    return `${qty} ${unitName} (${totalG.toLocaleString('pt-BR')}g)`
   }
   if (weeklyG >= 1000) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
   return `${weeklyG.toLocaleString('pt-BR')} g`
