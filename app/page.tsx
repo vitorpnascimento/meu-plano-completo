@@ -217,90 +217,28 @@ const NEW_USER_GOALS    = { cals: 2000, p: 150, c: 200, f: 65 }
 
 // ─── Lista de Compras — unidades práticas de mercado ──────────────────────────
 
-/** Tamanho da embalagem/unidade de compra por ID TACO (em gramas ou ml) */
+/** Unidades de compra contáveis e universais por ID TACO.
+ *  Apenas itens com tamanho fixo e bem definido — tudo mais exibe em g/kg. */
 const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
-  // Ovos
-  19: { label: 'ovos',          size: 60  },
-  20: { label: 'ovos',          size: 60  },
-  21: { label: 'ovos',          size: 60  },
-  22: { label: 'claras',        size: 30  },
-  // Leite
-  46: { label: 'L',             size: 1000 },
-  47: { label: 'L',             size: 1000 },
-  // Iogurte
-  48: { label: 'potes (165g)',  size: 165  },
-  49: { label: 'potes (165g)',  size: 165  },
-  99: { label: 'potes (165g)',  size: 165  },
-  // Requeijão
-  54: { label: 'potes (200g)',  size: 200  },
-  98: { label: 'potes (200g)',  size: 200  },
-  // Queijos
-  50: { label: 'pctes (150g)',  size: 150  },
-  51: { label: 'potes (200g)',  size: 200  },
-  52: { label: 'pctes (250g)',  size: 250  },
-  // Atum / sardinha enlatados
-  13: { label: 'latas (170g)',  size: 170  },
-  16: { label: 'latas (125g)',  size: 125  },
-  // Carnes e aves (granel, vende por kg)
-  1:  { label: 'kg', size: 1000 },  2:  { label: 'kg', size: 1000 },
-  3:  { label: 'kg', size: 1000 },  4:  { label: 'kg', size: 1000 },
-  5:  { label: 'kg', size: 1000 },  6:  { label: 'kg', size: 1000 },
-  7:  { label: 'kg', size: 1000 },  8:  { label: 'kg', size: 1000 },
-  9:  { label: 'kg', size: 1000 },  10: { label: 'kg', size: 1000 },
-  11: { label: 'kg', size: 1000 },  12: { label: 'kg', size: 1000 },
-  14: { label: 'kg', size: 1000 },  15: { label: 'kg', size: 1000 },
-  17: { label: 'kg', size: 1000 },  18: { label: 'kg', size: 1000 },
-  110:{ label: 'kg', size: 1000 },  112:{ label: 'kg', size: 1000 },
-  // Arroz, feijão, leguminosas
-  23: { label: 'kg', size: 1000 },  24: { label: 'kg', size: 1000 },
-  40: { label: 'kg', size: 1000 },  41: { label: 'kg', size: 1000 },
-  42: { label: 'kg', size: 1000 },  43: { label: 'kg', size: 1000 },
-  44: { label: 'kg', size: 1000 },  45: { label: 'kg', size: 1000 },
-  // Tubérculos
-  36: { label: 'kg', size: 1000 },  37: { label: 'kg', size: 1000 },
-  38: { label: 'kg', size: 1000 },  39: { label: 'kg', size: 1000 },
-  // Cereais embalados
-  27: { label: 'pctes (500g)',  size: 500  },
-  28: { label: 'pctes (500g)',  size: 500  },
-  29: { label: 'pctes (500g)',  size: 500  },
-  32: { label: 'pctes (500g)',  size: 500  },
-  34: { label: 'pctes (500g)',  size: 500  },
-  35: { label: 'pctes (500g)',  size: 500  },
-  114:{ label: 'pctes (500g)',  size: 500  },
-  115:{ label: 'pctes (500g)',  size: 500  },
-  // Pão
-  25: { label: 'unidades',      size: 50   },
-  26: { label: 'pacotes',       size: 500  },
-  33: { label: 'unidades',      size: 30   },
-  113:{ label: 'pacotes',       size: 500  },
-  // Suplementos (por dose)
-  55: { label: 'doses (20g)',   size: 20   },
-  56: { label: 'doses (20g)',   size: 20   },
-  57: { label: 'doses (20g)',   size: 20   },
-  // Pastas e oleaginosas
-  92: { label: 'pctes (200g)',  size: 200  },
-  93: { label: 'potes (500g)',  size: 500  },
-  94: { label: 'pctes (200g)',  size: 200  },
-  95: { label: 'pctes (200g)',  size: 200  },
-  96: { label: 'pctes (200g)',  size: 200  },
-  97: { label: 'pctes (200g)',  size: 200  },
-  // Óleos
-  89: { label: 'frascos (500ml)', size: 500 },
-  90: { label: 'frascos (900ml)', size: 900 },
-  // Frutas (por unidade)
-  58: { label: 'unidades',      size: 100  },
-  59: { label: 'unidades',      size: 80   },
-  60: { label: 'unidades',      size: 130  },
-  61: { label: 'unidades',      size: 150  },
-  62: { label: 'unidades',      size: 300  },
-  63: { label: 'unidades',      size: 12   },
-  67: { label: 'unidades',      size: 250  },
-  68: { label: 'cachos',        size: 400  },
-  69: { label: 'unidades',      size: 80   },
-  70: { label: 'unidades',      size: 150  },
-  71: { label: 'unidades',      size: 200  },
-  // Outros
-  104:{ label: 'potes (300g)',  size: 300  },
+  // Ovos (1 ovo ≈ 50g)
+  19: { label: 'ovos',         size: 50  },
+  20: { label: 'ovos',         size: 50  },
+  21: { label: 'ovos',         size: 50  },
+  // Iogurte natural (pote padrão de 165g)
+  48: { label: 'potes (165g)', size: 165 },
+  49: { label: 'potes (165g)', size: 165 },
+  99: { label: 'potes (165g)', size: 165 },
+  // Requeijão (pote padrão de 200g)
+  54: { label: 'potes (200g)', size: 200 },
+  98: { label: 'potes (200g)', size: 200 },
+  // Whey / suplemento proteico (dose de 20g)
+  55: { label: 'doses (20g)',  size: 20  },
+  56: { label: 'doses (20g)',  size: 20  },
+  57: { label: 'doses (20g)',  size: 20  },
+  // Frutas contáveis
+  58: { label: 'bananas',      size: 100 },  // Banana prata (1 un ≈ 100g)
+  59: { label: 'bananas',      size: 80  },  // Banana nanica (1 un ≈ 80g)
+  60: { label: 'maçãs',        size: 130 },  // Maçã fuji (1 un ≈ 130g)
 }
 
 /** Mapeia categorias TACO → categorias de mercado */
@@ -351,7 +289,7 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
     const unitName = pack.label.replace(/\s*\(.*?\)/, '').trim()
     return `${qty} ${unitName} (${weeklyG.toLocaleString('pt-BR')}g)`
   }
-  if (weeklyG >= 900) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
+  if (weeklyG >= 1000) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
   return `${weeklyG.toLocaleString('pt-BR')} g`
 }
 
