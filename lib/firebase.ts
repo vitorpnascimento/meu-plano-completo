@@ -166,7 +166,10 @@ export async function checkUsernameAvailable(username: string, currentUid?: stri
 export async function saveUserProfile(uid: string, profile: UserProfile, oldUsername?: string): Promise<boolean> {
   if (!init() || !_db || !uid) return false
   try {
-    await setDoc(doc(_db, 'userProfiles', uid), { ...profile, updatedAt: new Date().toISOString() })
+    const profileData = Object.fromEntries(
+      Object.entries({ ...profile, updatedAt: new Date().toISOString() }).filter(([, v]) => v !== undefined)
+    )
+    await setDoc(doc(_db, 'userProfiles', uid), profileData)
     await setDoc(doc(_db, 'usernames', profile.username.toLowerCase()), { uid })
     if (oldUsername && oldUsername !== profile.username.toLowerCase()) {
       await deleteDoc(doc(_db, 'usernames', oldUsername)).catch(() => {})
