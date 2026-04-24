@@ -235,6 +235,9 @@ const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
   55: { label: 'doses (20g)',  size: 20  },
   56: { label: 'doses (20g)',  size: 20  },
   57: { label: 'doses (20g)',  size: 20  },
+  // Pão de forma (fatia ≈ 25g)
+  26:  { label: 'fatias',       size: 25  },  // Pão integral
+  113: { label: 'fatias',       size: 25  },  // Pão de forma integral
   // Frutas contáveis
   58: { label: 'bananas',      size: 100 },  // Banana prata (1 un ≈ 100g)
   59: { label: 'bananas',      size: 80  },  // Banana nanica (1 un ≈ 80g)
