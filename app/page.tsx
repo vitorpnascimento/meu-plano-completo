@@ -1246,7 +1246,7 @@ export default function Home() {
     const t2 = setTimeout(() => { setHeaderPhase('tab');     setHeaderKey(k => k + 1) }, 12000)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile?.uid])
+  }, [userProfile?.username])
 
   // Animação ao mudar de aba (só após fase 'tab')
   useEffect(() => {
