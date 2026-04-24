@@ -99,6 +99,7 @@ interface CustomFood {
   grams:         number   // tamanho da porção padrão
   gramsPerUnit?: number   // gramas por unidade (ex: 25g/fatia)
   initialUnits?: number   // quantidade inicial padrão (ex: 2 fatias)
+  createdBy?:    { uid: string; username: string; avatar: { type: 'preset'|'upload'; preset?: string; url?: string } }
 }
 
 interface WeightEntry {
@@ -711,12 +712,14 @@ function addFoodToLibrary(
   current: CustomFood[],
   item: { name: string; kcal: number; p: number; c: number; f: number; gramsPerUnit?: number; initialUnits?: number },
   grams = 100,
+  createdBy?: CustomFood['createdBy'],
 ): CustomFood[] {
   const name = item.name.trim()
   if (!name || current.some(cf => cf.name.toLowerCase() === name.toLowerCase())) return current
   const entry: CustomFood = { id: newId(), name, kcal: item.kcal, p: item.p, c: item.c, f: item.f, grams }
   if (item.gramsPerUnit !== undefined) entry.gramsPerUnit = item.gramsPerUnit
   if (item.initialUnits !== undefined) entry.initialUnits = item.initialUnits
+  if (createdBy) entry.createdBy = createdBy
   return [...current, entry]
 }
 
@@ -943,6 +946,7 @@ export default function Home() {
   const [communityDietDetail, setCommunityDietDetail] = useState<SharedDiet|null>(null)
   const [communitySubs,      setCommunitySubs]      = useState<CommunitySubstitution[]>([])
   const [communityFoods,     setCommunityFoods]     = useState<CommunityFood[]>([])
+  const [viewProfileModal,   setViewProfileModal]   = useState<null|{username:string;avatar:{type:'preset'|'upload';preset?:string;url?:string}}>(null)
   const [showFoodPicker,     setShowFoodPicker]     = useState(false)
   const [foodPickerQuery,    setFoodPickerQuery]    = useState('')
   const [foodPickerLoading,  setFoodPickerLoading]  = useState(false)
@@ -1529,11 +1533,13 @@ export default function Home() {
     // Salva na biblioteca pessoal quando adicionando novo alimento
     let newCustomFoods = customFoods
     if (itemModal.mode === 'add') {
+      const cb = userProfile ? { uid: authUser?.uid ?? '', username: userProfile.username, avatar: { type: userProfile.avatarType, preset: userProfile.avatarPreset, url: userProfile.avatarType === 'upload' ? userProfile.avatarUrl : undefined } } : undefined
       newCustomFoods = addFoodToLibrary(
         customFoods,
         { name: baseName, kcal, p, c, f,
           ...(hasValidUnits ? { gramsPerUnit, initialUnits } : {}) },
         hasValidUnits ? totalGrams : 100,
+        cb as CustomFood['createdBy'],
       )
       if (newCustomFoods !== customFoods) setCustomFoods(newCustomFoods)
     }
@@ -1746,7 +1752,8 @@ export default function Home() {
       idx === quickAddMeal ? { ...m, items: [...(m.items ?? []), newItem] } : m
     )
     // Salva automaticamente na biblioteca pessoal
-    const newCustomFoods = addFoodToLibrary(customFoods, newItem)
+    const createdBy = userProfile ? { uid: authUser?.uid ?? '', username: userProfile.username, avatar: { type: userProfile.avatarType, preset: userProfile.avatarPreset, url: userProfile.avatarType === 'upload' ? userProfile.avatarUrl : undefined } } : undefined
+    const newCustomFoods = addFoodToLibrary(customFoods, newItem, 100, createdBy as CustomFood['createdBy'])
     if (newCustomFoods !== customFoods) setCustomFoods(newCustomFoods)
     setMeals(nm)
     save({ meals: nm, customFoods: newCustomFoods })
@@ -4621,13 +4628,16 @@ export default function Home() {
                   marginBottom:10, border:'1px solid var(--border)',
                 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
-                    <CommunityAvatar av={diet.authorAvatar} size={36} />
-                    <div>
-                      <div style={{ fontWeight:600, fontSize:14 }}>{diet.authorUsername}</div>
-                      <div style={{ fontSize:11, color:'var(--text-secondary)' }}>
-                        {new Date(diet.createdAt).toLocaleDateString('pt-BR')} · {diet.dietData.length} refeições
+                    <button onClick={() => setViewProfileModal({ username: diet.authorUsername, avatar: diet.authorAvatar })}
+                      style={{ display:'flex', alignItems:'center', gap:10, background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                      <CommunityAvatar av={diet.authorAvatar} size={36} />
+                      <div style={{ textAlign:'left' }}>
+                        <div style={{ fontWeight:600, fontSize:14 }}>@{diet.authorUsername}</div>
+                        <div style={{ fontSize:11, color:'var(--text-secondary)' }}>
+                          {new Date(diet.createdAt).toLocaleDateString('pt-BR')} · {diet.dietData.length} refeições
+                        </div>
                       </div>
-                    </div>
+                    </button>
                     <div style={{ marginLeft:'auto', textAlign:'right' }}>
                       <div style={{ fontWeight:700, fontSize:15, color:'var(--primary)' }}>{diet.totalCals} kcal</div>
                       <div style={{ fontSize:11, color:'var(--text-secondary)' }}>P{diet.macros.p}g C{diet.macros.c}g G{diet.macros.g}g</div>
@@ -4683,10 +4693,11 @@ export default function Home() {
                   background:'var(--surface-2)', borderRadius:12, padding:'12px 14px',
                   marginBottom:10, border:'1px solid var(--border)',
                 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <button onClick={() => setViewProfileModal({ username: food.authorUsername, avatar: food.authorAvatar })}
+                    style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, background:'none', border:'none', cursor:'pointer', padding:0 }}>
                     <CommunityAvatar av={food.authorAvatar} size={28} />
                     <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{food.authorUsername}</span>
-                  </div>
+                  </button>
                   <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
                     <div>
                       <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{food.name}</div>
@@ -4698,13 +4709,14 @@ export default function Home() {
                       <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
                         onClick={() => {
                           const newFood: CustomFood = {
-                            id:    `cf_${Date.now()}`,
-                            name:  food.name,
-                            kcal:  food.kcal,
-                            p:     food.p,
-                            c:     food.c,
-                            f:     food.f,
-                            grams: food.grams,
+                            id:        `cf_${Date.now()}`,
+                            name:      food.name,
+                            kcal:      food.kcal,
+                            p:         food.p,
+                            c:         food.c,
+                            f:         food.f,
+                            grams:     food.grams,
+                            createdBy: { uid: food.authorUid, username: food.authorUsername, avatar: food.authorAvatar },
                           }
                           const updated = [...customFoods, newFood]
                           setCustomFoods(updated)
@@ -5437,6 +5449,14 @@ export default function Home() {
                         {cf.gramsPerUnit && (
                           <div className="my-foods-unit-hint">1 un = {cf.gramsPerUnit}g</div>
                         )}
+                        {cf.createdBy && (
+                          <button
+                            onClick={() => setViewProfileModal({ username: cf.createdBy!.username, avatar: cf.createdBy!.avatar })}
+                            style={{ display:'flex', alignItems:'center', gap:4, marginTop:3, background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                            <CommunityAvatar av={cf.createdBy.avatar} size={16} />
+                            <span style={{ fontSize:11, color:'var(--text-secondary)' }}>@{cf.createdBy.username}</span>
+                          </button>
+                        )}
                       </div>
                       <div className="my-foods-actions">
                         {myFoodsDeleteConfirm === cf.id ? (
@@ -5780,6 +5800,20 @@ export default function Home() {
                 <button className="btn btn-cancel" style={{ marginTop:12 }} onClick={() => setShowFoodPicker(false)}>Fechar</button>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Perfil de Usuário ══ */}
+      {viewProfileModal && (
+        <div className="modal-overlay" onClick={() => setViewProfileModal(null)}>
+          <div className="modal-card" style={{ textAlign:'center' }} onClick={e => e.stopPropagation()}>
+            <CommunityAvatar av={viewProfileModal.avatar} size={72} />
+            <div style={{ fontWeight:700, fontSize:18, marginTop:12 }}>@{viewProfileModal.username}</div>
+            <div style={{ fontSize:13, color:'var(--text-secondary)', marginTop:4 }}>
+              Perfil público · Meu Plano
+            </div>
+            <button className="btn btn-cancel" style={{ marginTop:16 }} onClick={() => setViewProfileModal(null)}>Fechar</button>
           </div>
         </div>
       )}
