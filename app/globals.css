@@ -3862,46 +3862,30 @@ html.dark .meal-add-btn { background: rgba(99,102,241,0.12); }
   75%  { transform: scale(1.04); }
   100% { opacity: 1; transform: scale(1); letter-spacing: -0.2px; }
 }
-/* hoje — bounce vindo de baixo */
+/* bounce de baixo — fase inicial / aba hoje */
 @keyframes headerBounceUp {
-  0%   { opacity: 0; transform: translateY(18px); }
-  55%  { opacity: 1; transform: translateY(-4px); }
+  0%   { opacity: 0; transform: translateY(22px); }
+  55%  { opacity: 1; transform: translateY(-5px); }
   75%  { transform: translateY(2px); }
   100% { opacity: 1; transform: translateY(0); }
 }
-/* peso — escala com mola */
-@keyframes headerScalePop {
-  0%   { opacity: 0; transform: scale(0.75); }
-  60%  { opacity: 1; transform: scale(1.07); }
-  80%  { transform: scale(0.97); }
-  100% { opacity: 1; transform: scale(1); }
-}
-/* estatísticas — slide da esquerda */
-@keyframes headerSlideLeft {
-  0%   { opacity: 0; transform: translateX(-22px); }
-  60%  { opacity: 1; transform: translateX(3px); }
+/* avançando — nova aba entra pela direita */
+@keyframes headerFromRight {
+  0%   { opacity: 0; transform: translateX(28px); }
+  55%  { opacity: 1; transform: translateX(-4px); }
   100% { opacity: 1; transform: translateX(0); }
 }
-/* comunidade — flip no eixo X (perspective) */
-@keyframes headerFlipX {
-  0%   { opacity: 0; transform: perspective(400px) rotateX(40deg) translateY(6px); }
-  60%  { opacity: 1; transform: perspective(400px) rotateX(-6deg) translateY(0); }
-  100% { opacity: 1; transform: perspective(400px) rotateX(0deg); }
+/* voltando — nova aba entra pela esquerda */
+@keyframes headerFromLeft {
+  0%   { opacity: 0; transform: translateX(-28px); }
+  55%  { opacity: 1; transform: translateX(4px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
-/* config — rotação com escala */
-@keyframes headerSpinIn {
-  0%   { opacity: 0; transform: rotate(-12deg) scale(0.85); }
-  55%  { opacity: 1; transform: rotate(4deg) scale(1.04); }
-  80%  { transform: rotate(-1deg) scale(0.99); }
-  100% { opacity: 1; transform: rotate(0deg) scale(1); }
-}
-.header-msg-greeting  { animation: headerGreeting  0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.header-msg-brand     { animation: headerBrand     0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.header-tab-hoje      { animation: headerBounceUp  0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.header-tab-peso      { animation: headerScalePop  0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-.header-tab-stats     { animation: headerSlideLeft 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.header-tab-comunidade{ animation: headerFlipX     0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
-.header-tab-config    { animation: headerSpinIn    0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.header-msg-greeting  { animation: headerGreeting  1s    cubic-bezier(0.22, 1, 0.36, 1) both; }
+.header-msg-brand     { animation: headerBrand     0.8s  cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.header-tab-up        { animation: headerBounceUp  0.7s  cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.header-tab-forward   { animation: headerFromRight 0.6s  cubic-bezier(0.22, 1, 0.36, 1) both; }
+.header-tab-backward  { animation: headerFromLeft  0.6s  cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 /* ── Drag handle (reordenar refeições) ───────────────────────────────────── */
 .meal-drag-handle {

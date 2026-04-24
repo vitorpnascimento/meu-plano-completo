@@ -874,8 +874,11 @@ export default function Home() {
   const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
   // ── Header animado ───────────────────────────────────────────────────────────
-  const [headerPhase, setHeaderPhase] = useState<'greeting'|'brand'|'tab'>('greeting')
-  const [headerKey,   setHeaderKey]   = useState(0)
+  const [headerPhase,     setHeaderPhase]     = useState<'greeting'|'brand'|'tab'>('greeting')
+  const [headerKey,       setHeaderKey]       = useState(0)
+  const [headerAnimClass, setHeaderAnimClass] = useState('header-tab-up')
+  const TAB_ORDER = ['hoje', 'peso', 'estatísticas', 'comunidade', 'config']
+  const prevTabRef = useRef('hoje')
 
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [isDark, setIsDark] = useState(false) // light por padrão
@@ -1242,15 +1245,25 @@ export default function Home() {
   useEffect(() => {
     if (!userProfile) return
     setHeaderPhase('greeting'); setHeaderKey(k => k + 1)
-    const t1 = setTimeout(() => { setHeaderPhase('brand');   setHeaderKey(k => k + 1) }, 6000)
-    const t2 = setTimeout(() => { setHeaderPhase('tab');     setHeaderKey(k => k + 1) }, 9500)
+    const t1 = setTimeout(() => { setHeaderPhase('brand'); setHeaderKey(k => k + 1) }, 6000)
+    const t2 = setTimeout(() => {
+      setHeaderPhase('tab')
+      setHeaderAnimClass('header-tab-up')
+      setHeaderKey(k => k + 1)
+    }, 9500)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userProfile?.username])
 
-  // Animação ao mudar de aba (só após fase 'tab')
+  // Direção da animação ao mudar de aba
   useEffect(() => {
-    if (headerPhase === 'tab') setHeaderKey(k => k + 1)
+    if (headerPhase === 'tab') {
+      const prev = TAB_ORDER.indexOf(prevTabRef.current)
+      const next = TAB_ORDER.indexOf(activeTab)
+      setHeaderAnimClass(next >= prev ? 'header-tab-forward' : 'header-tab-backward')
+      setHeaderKey(k => k + 1)
+    }
+    prevTabRef.current = activeTab
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
@@ -3955,11 +3968,7 @@ export default function Home() {
               <div key={headerKey} className={
                 headerPhase === 'greeting' ? 'header-msg-greeting' :
                 headerPhase === 'brand'    ? 'header-msg-brand'    :
-                activeTab === 'hoje'           ? 'header-tab-hoje'       :
-                activeTab === 'peso'           ? 'header-tab-peso'       :
-                activeTab === 'estatísticas'   ? 'header-tab-stats'      :
-                activeTab === 'comunidade'     ? 'header-tab-comunidade' :
-                'header-tab-config'
+                headerAnimClass
               } style={{ overflow: 'hidden' }}>
                 <h1 style={{ whiteSpace: 'nowrap' }}>
                   {headerPhase === 'greeting'
