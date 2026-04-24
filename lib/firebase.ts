@@ -7,6 +7,12 @@ import {
   onSnapshot,
   Firestore,
   deleteDoc,
+  getDocs,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
 } from 'firebase/firestore'
 import {
   getAuth,
@@ -213,4 +219,148 @@ export function subscribeToUserData(
       callback(null)
     },
   )
+}
+
+// ── Shared Diets ──────────────────────────────────────────────────────────────
+
+export interface SharedDiet {
+  code:           string
+  authorUid:      string
+  authorUsername: string
+  authorAvatar:   { type: 'preset' | 'upload'; preset?: string; url?: string }
+  dietData:       any[]
+  totalCals:      number
+  macros:         { p: number; c: number; g: number }
+  createdAt:      string
+  isPublic:       boolean
+}
+
+export interface CommunitySubstitution {
+  id:               string
+  authorUid:        string
+  authorUsername:   string
+  authorAvatar:     { type: 'preset' | 'upload'; preset?: string; url?: string }
+  originalFood:     string
+  substituteFood:   string
+  originalMacros:   { kcal: number; p: number; c: number; f: number }
+  substituteMacros: { kcal: number; p: number; c: number; f: number }
+  reason:           string
+  createdAt:        string
+  likes:            number
+}
+
+function generateDietCode(username: string): string {
+  const prefix = username.slice(0, 5).toUpperCase().padEnd(5, 'X')
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let suffix = ''
+  for (let i = 0; i < 4; i++) suffix += chars[Math.floor(Math.random() * chars.length)]
+  return `${prefix}-${suffix}`
+}
+
+export async function shareDiet(
+  uid: string,
+  profile: UserProfile,
+  meals: any[],
+  totalCals: number,
+  macros: { p: number; c: number; g: number },
+): Promise<string | null> {
+  if (!init() || !_db || !uid) return null
+  try {
+    const code = generateDietCode(profile.username)
+    const avatarData: Record<string, any> = { type: profile.avatarType }
+    if (profile.avatarPreset) avatarData.preset = profile.avatarPreset
+    if (profile.avatarType === 'upload' && profile.avatarUrl) avatarData.url = profile.avatarUrl
+    await setDoc(doc(_db, 'sharedDiets', code), {
+      code,
+      authorUid:      uid,
+      authorUsername: profile.username,
+      authorAvatar:   avatarData,
+      dietData:       meals,
+      totalCals:      Math.round(totalCals),
+      macros:         { p: Math.round(macros.p), c: Math.round(macros.c), g: Math.round(macros.g) },
+      createdAt:      new Date().toISOString(),
+      isPublic:       false,
+    })
+    return code
+  } catch (e) {
+    console.error('[Firebase] shareDiet error:', e)
+    return null
+  }
+}
+
+export async function loadDietByCode(code: string): Promise<SharedDiet | null> {
+  if (!init() || !_db) return null
+  try {
+    const snap = await getDoc(doc(_db, 'sharedDiets', code.toUpperCase().trim()))
+    return snap.exists() ? (snap.data() as SharedDiet) : null
+  } catch {
+    return null
+  }
+}
+
+export async function updateDietPublic(code: string, isPublic: boolean): Promise<boolean> {
+  if (!init() || !_db) return false
+  try {
+    await setDoc(doc(_db, 'sharedDiets', code), { isPublic }, { merge: true })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function loadPublicDiets(): Promise<SharedDiet[]> {
+  if (!init() || !_db) return []
+  try {
+    const q = query(
+      collection(_db, 'sharedDiets'),
+      where('isPublic', '==', true),
+      orderBy('createdAt', 'desc'),
+      limit(20),
+    )
+    const snap = await getDocs(q)
+    return snap.docs.map(d => d.data() as SharedDiet)
+  } catch {
+    return []
+  }
+}
+
+export async function shareSubstitution(
+  uid: string,
+  profile: UserProfile,
+  data: Omit<CommunitySubstitution, 'id' | 'authorUid' | 'authorUsername' | 'authorAvatar' | 'createdAt' | 'likes'>,
+): Promise<boolean> {
+  if (!init() || !_db || !uid) return false
+  try {
+    const id = `${uid}_${Date.now()}`
+    const avatarData: Record<string, any> = { type: profile.avatarType }
+    if (profile.avatarPreset) avatarData.preset = profile.avatarPreset
+    if (profile.avatarType === 'upload' && profile.avatarUrl) avatarData.url = profile.avatarUrl
+    await setDoc(doc(_db, 'communitySubstitutions', id), {
+      id,
+      authorUid:      uid,
+      authorUsername: profile.username,
+      authorAvatar:   avatarData,
+      ...data,
+      createdAt: new Date().toISOString(),
+      likes:     0,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function loadPublicSubstitutions(): Promise<CommunitySubstitution[]> {
+  if (!init() || !_db) return []
+  try {
+    const q = query(
+      collection(_db, 'communitySubstitutions'),
+      orderBy('createdAt', 'desc'),
+      limit(30),
+    )
+    const snap = await getDocs(q)
+    return snap.docs.map(d => d.data() as CommunitySubstitution)
+  } catch {
+    return []
+  }
 }

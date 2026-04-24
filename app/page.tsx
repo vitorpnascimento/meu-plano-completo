@@ -14,6 +14,7 @@ import {
   AlertTriangle, Plus as PlusIcon, Radio, Upload,
   Search, Zap, Bot, Flame, Coins, Sparkles, GripVertical, BookMarked,
   ShoppingCart, CalendarDays, Activity,
+  Users, Share2, Download,
 } from 'lucide-react'
 import {
   DndContext, closestCenter, PointerSensor, TouchSensor,
@@ -38,7 +39,15 @@ import {
   subscribeToUserData,
   loadUserProfile,
   saveUserProfile,
+  shareDiet as fbShareDiet,
+  loadDietByCode,
+  updateDietPublic,
+  loadPublicDiets,
+  shareSubstitution,
+  loadPublicSubstitutions,
   type UserProfile,
+  type SharedDiet,
+  type CommunitySubstitution,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
 import ProfileSetup from './components/ProfileSetup'
@@ -139,6 +148,31 @@ interface SubSearchResult {
   c:      number
   f:      number
   isAI?:  boolean
+}
+
+// ─── Avatar helpers ────────────────────────────────────────────────────────────
+
+const AVATAR_IDS    = ['indigo','emerald','rose','orange','purple','cyan','amber','teal'] as const
+const AVATAR_COLORS = ['#6366F1','#10B981','#F43F5E','#F97316','#8B5CF6','#06B6D4','#EAB308','#14B8A6']
+const AVATAR_EMOJIS = ['💪','🥗','🎯','🏃','⚡','🏊','⭐','🌿']
+
+function avatarBg(preset?: string)    { return AVATAR_COLORS[AVATAR_IDS.indexOf((preset ?? 'indigo') as any)] ?? '#6366F1' }
+function avatarEmoji(preset?: string) { return AVATAR_EMOJIS[AVATAR_IDS.indexOf((preset ?? 'indigo') as any)] ?? '💪' }
+
+function CommunityAvatar({ av, size = 32 }: { av: SharedDiet['authorAvatar']; size?: number }) {
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: av.type === 'upload' ? 'transparent' : avatarBg(av.preset),
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: size * 0.5, overflow: 'hidden', border: '2px solid var(--primary-mid)',
+    }}>
+      {av.type === 'upload' && av.url
+        ? <img src={av.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="avatar" />
+        : avatarEmoji(av.preset)
+      }
+    </div>
+  )
 }
 
 // ─── Defaults ──────────────────────────────────────────────────────────────────
@@ -891,6 +925,24 @@ export default function Home() {
   const [myFoodsDeleteConfirm, setMyFoodsDeleteConfirm] = useState<string | null>(null)
   const [myFoodsPendingAdd,    setMyFoodsPendingAdd]    = useState<{ food: CustomFood; qty: number } | null>(null)
 
+  // ── Comunidade ──────────────────────────────────────────────────────────────
+  const [shareDietModal,   setShareDietModal]   = useState<null|{code:string;isPublic:boolean}>(null)
+  const [shareDietLoading, setShareDietLoading] = useState(false)
+  const [dietCodeModal,    setDietCodeModal]    = useState(false)
+  const [dietCodeInput,    setDietCodeInput]    = useState('')
+  const [dietCodePreview,  setDietCodePreview]  = useState<SharedDiet|null>(null)
+  const [dietCodeLoading,  setDietCodeLoading]  = useState(false)
+  const [dietCodeError,    setDietCodeError]    = useState('')
+  const [dietCodeConfirm,  setDietCodeConfirm]  = useState(false)
+  const [communityDiets,      setCommunityDiets]      = useState<SharedDiet[]>([])
+  const [communityDietsReady, setCommunityDietsReady] = useState(false)
+  const [communityDietDetail, setCommunityDietDetail] = useState<SharedDiet|null>(null)
+  const [communitySubs,      setCommunitySubs]      = useState<CommunitySubstitution[]>([])
+  const [shareSubItem,   setShareSubItem]   = useState<null|{original:MealItem;sub:SubOption}>(null)
+  const [shareSubReason, setShareSubReason] = useState('')
+  const [shareSubDone,   setShareSubDone]   = useState(false)
+  const [shareSubLoading,setShareSubLoading]= useState(false)
+
   // ── Import Modal ─────────────────────────────────────────────────────────────
   const [showImport,    setShowImport]    = useState(false)
   const [importStep,    setImportStep]    = useState<'upload'|'processing'|'preview'|'done'>('upload')
@@ -1160,6 +1212,11 @@ export default function Home() {
     return () => clearTimeout(t)
   }, [onboardingStep])
 
+  useEffect(() => {
+    if (activeTab === 'comunidade') handleLoadCommunity()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
   // ── Save ────────────────────────────────────────────────────────────────────
 
   const save = (overrides: Record<string, any> = {}) => {
@@ -1189,6 +1246,67 @@ export default function Home() {
     await logoutUser()
     localStorage.removeItem('dietUserId')
     // resetState() é chamado pelo onAuthStateChanged automaticamente
+  }
+
+  // ── Ações: Comunidade ────────────────────────────────────────────────────────
+
+  const handleShareDiet = async () => {
+    if (!authUser || !userProfile) return
+    setShareDietLoading(true)
+    const totalCals = meals.reduce((s, m) => s + m.items.reduce((ss: number, i: MealItem) => ss + i.kcal, 0), 0)
+    const macros = meals.reduce((acc, m) => ({
+      p: acc.p + m.items.reduce((s: number, i: MealItem) => s + i.p, 0),
+      c: acc.c + m.items.reduce((s: number, i: MealItem) => s + i.c, 0),
+      g: acc.g + m.items.reduce((s: number, i: MealItem) => s + i.f, 0),
+    }), { p: 0, c: 0, g: 0 })
+    const code = await fbShareDiet(authUser.uid, userProfile, meals as any, totalCals, macros)
+    if (code) setShareDietModal({ code, isPublic: false })
+    setShareDietLoading(false)
+  }
+
+  const handleTogglePublic = async (isPublic: boolean) => {
+    if (!shareDietModal) return
+    const ok = await updateDietPublic(shareDietModal.code, isPublic)
+    if (ok) setShareDietModal({ ...shareDietModal, isPublic })
+  }
+
+  const handleDietCodeSearch = async () => {
+    if (!dietCodeInput.trim()) return
+    setDietCodeLoading(true); setDietCodeError(''); setDietCodePreview(null); setDietCodeConfirm(false)
+    const diet = await loadDietByCode(dietCodeInput.trim())
+    if (diet) setDietCodePreview(diet)
+    else setDietCodeError('Código não encontrado. Verifique e tente novamente.')
+    setDietCodeLoading(false)
+  }
+
+  const handleUseDiet = (dietData: any[]) => {
+    setMeals(dietData as Meal[])
+    save({ meals: dietData })
+    setDietCodeModal(false); setDietCodeInput(''); setDietCodePreview(null)
+    setDietCodeError(''); setDietCodeConfirm(false)
+  }
+
+  const handleLoadCommunity = async () => {
+    if (communityDietsReady) return
+    setCommunityDietsReady(true)
+    const [diets, subs] = await Promise.all([loadPublicDiets(), loadPublicSubstitutions()])
+    setCommunityDiets(diets)
+    setCommunitySubs(subs)
+  }
+
+  const handleShareSub = async () => {
+    if (!authUser || !userProfile || !shareSubItem) return
+    setShareSubLoading(true)
+    const { original, sub } = shareSubItem
+    await shareSubstitution(authUser.uid, userProfile, {
+      originalFood:     original.name,
+      substituteFood:   sub.name,
+      originalMacros:   { kcal: original.kcal, p: original.p, c: original.c, f: original.f },
+      substituteMacros: { kcal: sub.kcal, p: sub.p, c: sub.c, f: sub.f },
+      reason:           shareSubReason.trim(),
+    })
+    setShareSubDone(true)
+    setShareSubLoading(false)
   }
 
   // ── Ações: Relatório ─────────────────────────────────────────────────────────
@@ -3807,10 +3925,11 @@ export default function Home() {
         {/* Tab bar — oculto no mobile (substituído pela bottom nav) */}
         <div className="tabs">
           {[
-            { id:'hoje',         icon:<ClipboardList size={15}/>, label:'Hoje'   },
-            { id:'peso',         icon:<Scale size={15}/>,         label:'Peso'   },
-            { id:'estatísticas', icon:<BarChart3 size={15}/>,     label:'Stats'  },
-            { id:'config',       icon:<Settings size={15}/>,      label:'Config' },
+            { id:'hoje',         icon:<ClipboardList size={15}/>, label:'Hoje'       },
+            { id:'peso',         icon:<Scale size={15}/>,         label:'Peso'       },
+            { id:'estatísticas', icon:<BarChart3 size={15}/>,     label:'Stats'      },
+            { id:'comunidade',   icon:<Users size={15}/>,         label:'Comunidade' },
+            { id:'config',       icon:<Settings size={15}/>,      label:'Config'     },
           ].map(t => (
             <button key={t.id}
               className={`tab-btn ${activeTab === t.id ? 'active' : ''}`}
@@ -4426,6 +4545,107 @@ export default function Home() {
           )}
         </div>
 
+        {/* ══════════════════════════════════════════════ COMUNIDADE */}
+        <div className={`tab-content ${activeTab === 'comunidade' ? 'active' : ''}`}>
+
+          {/* ── Cardápios da Comunidade ── */}
+          <div className="config-section" style={{ marginBottom: 12 }}>
+            <div className="config-section-header" style={{ cursor:'default' }}>
+              <div className="config-section-title-group">
+                <span className="config-section-label"><Users size={15}/> Cardápios da Comunidade</span>
+                <span className="config-section-desc">Cardápios públicos compartilhados por outros usuários</span>
+              </div>
+              <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
+                onClick={async () => { setCommunityDietsReady(false); const [d,s] = await Promise.all([loadPublicDiets(),loadPublicSubstitutions()]); setCommunityDiets(d); setCommunitySubs(s); setCommunityDietsReady(true) }}>
+                <RefreshCw size={13}/>
+              </button>
+            </div>
+            <div style={{ padding: '0 4px 12px' }}>
+              {!communityDietsReady && (
+                <div style={{ textAlign:'center', color:'var(--text-secondary)', padding:'24px 0', fontSize:13 }}>
+                  Carregando...
+                </div>
+              )}
+              {communityDietsReady && communityDiets.length === 0 && (
+                <div style={{ textAlign:'center', color:'var(--text-secondary)', padding:'24px 0', fontSize:13 }}>
+                  Nenhum cardápio público ainda. Seja o primeiro a compartilhar!
+                </div>
+              )}
+              {communityDiets.map(diet => (
+                <div key={diet.code} style={{
+                  background:'var(--surface-2)', borderRadius:12, padding:'12px 14px',
+                  marginBottom:10, border:'1px solid var(--border)',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                    <CommunityAvatar av={diet.authorAvatar} size={36} />
+                    <div>
+                      <div style={{ fontWeight:600, fontSize:14 }}>{diet.authorUsername}</div>
+                      <div style={{ fontSize:11, color:'var(--text-secondary)' }}>
+                        {new Date(diet.createdAt).toLocaleDateString('pt-BR')} · {diet.dietData.length} refeições
+                      </div>
+                    </div>
+                    <div style={{ marginLeft:'auto', textAlign:'right' }}>
+                      <div style={{ fontWeight:700, fontSize:15, color:'var(--primary)' }}>{diet.totalCals} kcal</div>
+                      <div style={{ fontSize:11, color:'var(--text-secondary)' }}>P{diet.macros.p}g C{diet.macros.c}g G{diet.macros.g}g</div>
+                    </div>
+                  </div>
+                  <div style={{ display:'flex', gap:6 }}>
+                    <button className="btn btn-small" style={{ width:'auto', flex:1, background:'var(--surface)', color:'var(--text-primary)' }}
+                      onClick={() => setCommunityDietDetail(diet)}>
+                      Ver detalhes
+                    </button>
+                    <button className="btn btn-small" style={{ width:'auto', flex:1 }}
+                      onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) handleUseDiet(diet.dietData) }}>
+                      Usar cardápio
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Substituições da Comunidade ── */}
+          <div className="config-section">
+            <div className="config-section-header" style={{ cursor:'default' }}>
+              <div className="config-section-title-group">
+                <span className="config-section-label"><ArrowLeftRight size={15}/> Substituições da Comunidade</span>
+                <span className="config-section-desc">Trocas sugeridas por outros usuários</span>
+              </div>
+            </div>
+            <div style={{ padding: '0 4px 12px' }}>
+              {communityDietsReady && communitySubs.length === 0 && (
+                <div style={{ textAlign:'center', color:'var(--text-secondary)', padding:'24px 0', fontSize:13 }}>
+                  Nenhuma substituição compartilhada ainda.
+                </div>
+              )}
+              {communitySubs.map(sub => (
+                <div key={sub.id} style={{
+                  background:'var(--surface-2)', borderRadius:12, padding:'12px 14px',
+                  marginBottom:10, border:'1px solid var(--border)',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                    <CommunityAvatar av={sub.authorAvatar} size={28} />
+                    <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{sub.authorUsername}</span>
+                  </div>
+                  <div style={{ fontSize:13, marginBottom:4 }}>
+                    <span style={{ fontWeight:600 }}>{sub.originalFood}</span>
+                    <span style={{ color:'var(--text-secondary)', margin:'0 6px' }}>→</span>
+                    <span style={{ fontWeight:600, color:'var(--primary)' }}>{sub.substituteFood}</span>
+                  </div>
+                  <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:4 }}>
+                    Original: {sub.originalMacros.kcal} kcal · P{sub.originalMacros.p}g C{sub.originalMacros.c}g G{sub.originalMacros.f}g
+                  </div>
+                  <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom: sub.reason ? 6 : 0 }}>
+                    Substituto: {sub.substituteMacros.kcal} kcal · P{sub.substituteMacros.p}g C{sub.substituteMacros.c}g G{sub.substituteMacros.f}g
+                  </div>
+                  {sub.reason && <div style={{ fontSize:12, fontStyle:'italic', color:'var(--text-secondary)' }}>"{sub.reason}"</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
         {/* ══════════════════════════════════════════════════════ CONFIG */}
         <div className={`tab-content ${activeTab === 'config' ? 'active' : ''}`}>
 
@@ -4916,10 +5136,22 @@ export default function Home() {
             </div>
             {configSections.cardapio && (
               <div className="config-section-body">
-                {/* ── Buscar TACO + Lista de Compras ── */}
+                {/* ── Buscar TACO + Lista de Compras + Comunidade ── */}
                 <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8, flexWrap:'wrap' }}>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}><Search size={13}/> Buscar TACO</button>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => setShowShoppingModal(true)}><ShoppingCart size={13}/> Lista de Compras</button>
+                  {firebaseConfigured && authUser && userProfile && (
+                    <button className="btn btn-small" style={{ width:'auto', background:'var(--surface-2)', color:'var(--text-primary)' }}
+                      onClick={handleShareDiet} disabled={shareDietLoading}>
+                      <Share2 size={13}/> {shareDietLoading ? 'Gerando...' : 'Compartilhar'}
+                    </button>
+                  )}
+                  {firebaseConfigured && authUser && (
+                    <button className="btn btn-small" style={{ width:'auto', background:'var(--surface-2)', color:'var(--text-primary)' }}
+                      onClick={() => { setDietCodeModal(true); setDietCodeInput(''); setDietCodePreview(null); setDietCodeError(''); setDietCodeConfirm(false) }}>
+                      <Download size={13}/> Importar
+                    </button>
+                  )}
                 </div>
 
                 {/* ── Adicionar alimento manual ── */}
@@ -5027,7 +5259,15 @@ export default function Home() {
                                 <div style={{ fontSize:13 }}>{alt.name}</div>
                                 <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{macroDesc(alt)}</div>
                               </div>
-                              <button className="config-reset-btn" onClick={() => deleteAlt(item.id, alt.id)}>✕</button>
+                              <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+                                {firebaseConfigured && authUser && userProfile && (
+                                  <button className="config-reset-btn" title="Compartilhar com a comunidade"
+                                    onClick={() => { setShareSubItem({ original: item, sub: alt }); setShareSubReason(''); setShareSubDone(false) }}>
+                                    <Share2 size={12}/>
+                                  </button>
+                                )}
+                                <button className="config-reset-btn" onClick={() => deleteAlt(item.id, alt.id)}>✕</button>
+                              </div>
                             </div>
                           ))
                       }
@@ -5246,6 +5486,194 @@ export default function Home() {
         </div>
       )}
 
+      {/* ══ Modal: Compartilhar Cardápio ══ */}
+      {shareDietModal && (
+        <div className="modal-overlay" onClick={() => setShareDietModal(null)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-title"><Share2 size={16}/> Compartilhar cardápio</div>
+
+            <div style={{ background:'var(--surface-2)', borderRadius:10, padding:'14px 16px', marginBottom:16, textAlign:'center' }}>
+              <div style={{ fontSize:11, color:'var(--text-secondary)', marginBottom:6 }}>Código do cardápio</div>
+              <div style={{ fontSize:24, fontWeight:800, letterSpacing:3, color:'var(--primary)' }}>{shareDietModal.code}</div>
+            </div>
+
+            <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+              <button className="btn btn-small" style={{ flex:1 }}
+                onClick={() => navigator.clipboard.writeText(shareDietModal.code)}>
+                <Copy size={13}/> Copiar código
+              </button>
+              <button className="btn btn-small" style={{ flex:1 }}
+                onClick={() => navigator.clipboard.writeText(`https://meu-plano-completo-mnreihyyo-vitor-pinheiro-s-projects.vercel.app`)}>
+                <Copy size={13}/> Copiar link
+              </button>
+            </div>
+
+            <button className="btn btn-small" style={{ width:'100%', marginBottom:12, background:'#25D366', color:'#fff' }}
+              onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(`Veja meu cardápio no Meu Plano! Código: ${shareDietModal.code}`)}`, '_blank')}>
+              WhatsApp
+            </button>
+
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderTop:'1px solid var(--border)' }}>
+              <div>
+                <div style={{ fontSize:13, fontWeight:600 }}>Publicar na comunidade</div>
+                <div style={{ fontSize:11, color:'var(--text-secondary)' }}>Aparece para todos na aba Comunidade</div>
+              </div>
+              <button
+                onClick={() => handleTogglePublic(!shareDietModal.isPublic)}
+                style={{
+                  width:42, height:24, borderRadius:12, border:'none', cursor:'pointer',
+                  background: shareDietModal.isPublic ? 'var(--primary)' : 'var(--surface-2)',
+                  transition:'background 0.2s', flexShrink:0,
+                  display:'flex', alignItems:'center',
+                  paddingLeft: shareDietModal.isPublic ? 20 : 4,
+                }}>
+                <div style={{ width:16, height:16, borderRadius:'50%', background:'#fff', boxShadow:'0 1px 3px rgba(0,0,0,.2)' }}/>
+              </button>
+            </div>
+
+            <button className="btn btn-cancel" style={{ marginTop:10 }} onClick={() => setShareDietModal(null)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Importar Cardápio ══ */}
+      {dietCodeModal && (
+        <div className="modal-overlay" onClick={() => setDietCodeModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-title"><Download size={16}/> Importar cardápio</div>
+
+            <div style={{ marginBottom:12 }}>
+              <label className="config-goal-label" style={{ marginBottom:6 }}>Código do cardápio</label>
+              <div style={{ display:'flex', gap:8 }}>
+                <input
+                  type="text"
+                  className="login-input"
+                  placeholder="Ex: VITOR-X7K2"
+                  value={dietCodeInput}
+                  onChange={e => setDietCodeInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && handleDietCodeSearch()}
+                  style={{ flex:1, letterSpacing:2 }}
+                />
+                <button className="btn btn-small" style={{ width:'auto' }}
+                  onClick={handleDietCodeSearch} disabled={dietCodeLoading || !dietCodeInput.trim()}>
+                  {dietCodeLoading ? '...' : 'Buscar'}
+                </button>
+              </div>
+              {dietCodeError && <div className="login-error" style={{ marginTop:6 }}>{dietCodeError}</div>}
+            </div>
+
+            {dietCodePreview && (
+              <div style={{ background:'var(--surface-2)', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                  <CommunityAvatar av={dietCodePreview.authorAvatar} size={36} />
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:14 }}>@{dietCodePreview.authorUsername}</div>
+                    <div style={{ fontSize:11, color:'var(--text-secondary)' }}>{dietCodePreview.dietData.length} refeições</div>
+                  </div>
+                  <div style={{ marginLeft:'auto', textAlign:'right' }}>
+                    <div style={{ fontWeight:700, color:'var(--primary)' }}>{dietCodePreview.totalCals} kcal</div>
+                    <div style={{ fontSize:11, color:'var(--text-secondary)' }}>P{dietCodePreview.macros.p}g C{dietCodePreview.macros.c}g G{dietCodePreview.macros.g}g</div>
+                  </div>
+                </div>
+                {dietCodePreview.dietData.map((meal: any) => (
+                  <div key={meal.id} style={{ marginBottom:6 }}>
+                    <div style={{ fontSize:12, fontWeight:600, marginBottom:2 }}>{meal.title}</div>
+                    {meal.items.map((item: any) => (
+                      <div key={item.id} style={{ fontSize:11, color:'var(--text-secondary)', paddingLeft:8 }}>
+                        {item.name} — {item.kcal} kcal
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                {!dietCodeConfirm ? (
+                  <button className="btn" style={{ marginTop:10, background:'var(--warning)', color:'#fff' }}
+                    onClick={() => setDietCodeConfirm(true)}>
+                    Usar este cardápio
+                  </button>
+                ) : (
+                  <div>
+                    <div style={{ fontSize:12, color:'var(--error)', marginBottom:8 }}>Isso vai substituir seu cardápio atual. Confirmar?</div>
+                    <div style={{ display:'flex', gap:8 }}>
+                      <button className="btn btn-cancel" style={{ flex:1 }} onClick={() => setDietCodeConfirm(false)}>Cancelar</button>
+                      <button className="btn" style={{ flex:1 }} onClick={() => handleUseDiet(dietCodePreview.dietData)}>Confirmar</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button className="btn btn-cancel" onClick={() => setDietCodeModal(false)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Detalhe Cardápio da Comunidade ══ */}
+      {communityDietDetail && (
+        <div className="modal-overlay" onClick={() => setCommunityDietDetail(null)}>
+          <div className="modal-card modal-card--wide" onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+              <CommunityAvatar av={communityDietDetail.authorAvatar} size={40} />
+              <div>
+                <div style={{ fontWeight:700, fontSize:15 }}>@{communityDietDetail.authorUsername}</div>
+                <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
+                  {communityDietDetail.totalCals} kcal · P{communityDietDetail.macros.p}g C{communityDietDetail.macros.c}g G{communityDietDetail.macros.g}g
+                </div>
+              </div>
+            </div>
+            <div style={{ maxHeight:360, overflowY:'auto', marginBottom:12 }}>
+              {communityDietDetail.dietData.map((meal: any) => (
+                <div key={meal.id} style={{ marginBottom:10 }}>
+                  <div style={{ fontWeight:600, fontSize:13, marginBottom:4, color:'var(--primary)' }}>{meal.title}</div>
+                  {meal.items.map((item: any) => (
+                    <div key={item.id} style={{ display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0', borderBottom:'1px solid var(--border)' }}>
+                      <span>{item.name}</span>
+                      <span style={{ color:'var(--text-secondary)' }}>{item.kcal} kcal</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <button className="btn" style={{ marginBottom:8 }}
+              onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) { handleUseDiet(communityDietDetail.dietData); setCommunityDietDetail(null) } }}>
+              Usar este cardápio
+            </button>
+            <button className="btn btn-cancel" onClick={() => setCommunityDietDetail(null)}>Fechar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Compartilhar Substituição ══ */}
+      {shareSubItem && (
+        <div className="modal-overlay" onClick={() => { setShareSubItem(null); setShareSubReason(''); setShareSubDone(false) }}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-title"><Share2 size={16}/> Compartilhar substituição</div>
+            {shareSubDone ? (
+              <div style={{ textAlign:'center', padding:'16px 0' }}>
+                <div style={{ fontSize:32, marginBottom:8 }}>✓</div>
+                <div style={{ fontWeight:600, marginBottom:4 }}>Compartilhado!</div>
+                <div style={{ fontSize:13, color:'var(--text-secondary)' }}>Sua substituição já está na comunidade.</div>
+                <button className="btn" style={{ marginTop:16 }} onClick={() => { setShareSubItem(null); setShareSubReason(''); setShareSubDone(false) }}>Fechar</button>
+              </div>
+            ) : (
+              <>
+                <div style={{ background:'var(--surface-2)', borderRadius:10, padding:'10px 12px', marginBottom:12, fontSize:13 }}>
+                  <span style={{ fontWeight:600 }}>{shareSubItem.original.name}</span>
+                  <span style={{ color:'var(--text-secondary)', margin:'0 8px' }}>→</span>
+                  <span style={{ fontWeight:600, color:'var(--primary)' }}>{shareSubItem.sub.name}</span>
+                </div>
+                <label className="config-goal-label" style={{ marginBottom:6 }}>Motivo (opcional)</label>
+                <input type="text" className="login-input" placeholder='Ex: "mais barato", "sem glúten"'
+                  value={shareSubReason} onChange={e => setShareSubReason(e.target.value)} style={{ marginBottom:12 }} />
+                <button className="btn" onClick={handleShareSub} disabled={shareSubLoading}>
+                  {shareSubLoading ? 'Compartilhando...' : 'Compartilhar com a comunidade'}
+                </button>
+                <button className="btn btn-cancel" style={{ marginTop:8 }} onClick={() => { setShareSubItem(null); setShareSubReason(''); setShareSubDone(false) }}>Cancelar</button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ══ Toast: refeições atualizadas ══ */}
       {refeicaoToast && (
         <div className="refeicao-toast">
@@ -5257,10 +5685,11 @@ export default function Home() {
       {/* ══ Bottom Navigation (mobile only) ══ */}
       <nav className="bottom-nav">
         {[
-          { id:'hoje',         icon:<ClipboardList size={22}/>, label:'Hoje'   },
-          { id:'peso',         icon:<Scale size={22}/>,         label:'Peso'   },
-          { id:'estatísticas', icon:<BarChart3 size={22}/>,     label:'Stats'  },
-          { id:'config',       icon:<Settings size={22}/>,      label:'Config' },
+          { id:'hoje',         icon:<ClipboardList size={22}/>, label:'Hoje'  },
+          { id:'peso',         icon:<Scale size={22}/>,         label:'Peso'  },
+          { id:'estatísticas', icon:<BarChart3 size={22}/>,     label:'Stats' },
+          { id:'comunidade',   icon:<Users size={22}/>,         label:'Comunidade' },
+          { id:'config',       icon:<Settings size={22}/>,      label:'Config'},
         ].map(t => (
           <button key={t.id}
             className={`bottom-nav-btn ${activeTab === t.id ? 'active' : ''}`}
