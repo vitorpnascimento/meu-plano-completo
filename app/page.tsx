@@ -4627,33 +4627,14 @@ export default function Home() {
                   background:'var(--surface-2)', borderRadius:12, padding:'12px 14px',
                   marginBottom:10, border:'1px solid var(--border)',
                 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:8 }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
                     <button onClick={() => setViewProfileModal({ username: diet.authorUsername, avatar: diet.authorAvatar })}
-                      style={{ display:'flex', alignItems:'center', gap:10, background:'none', border:'none', cursor:'pointer', padding:0 }}>
-                      <CommunityAvatar av={diet.authorAvatar} size={36} />
-                      <div style={{ textAlign:'left' }}>
-                        <div style={{ fontWeight:600, fontSize:14 }}>@{diet.authorUsername}</div>
-                        <div style={{ fontSize:11, color:'var(--text-secondary)' }}>
-                          {new Date(diet.createdAt).toLocaleDateString('pt-BR')} · {diet.dietData.length} refeições
-                        </div>
-                      </div>
-                    </button>
-                    <div style={{ marginLeft:'auto', textAlign:'right' }}>
-                      <div style={{ fontWeight:700, fontSize:15, color:'var(--primary)' }}>{diet.totalCals} kcal</div>
-                      <div style={{ fontSize:11, color:'var(--text-secondary)' }}>P{diet.macros.p}g C{diet.macros.c}g G{diet.macros.g}g</div>
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', gap:6 }}>
-                    <button className="btn btn-small" style={{ width:'auto', flex:1, background:'var(--surface)', color:'var(--text-primary)' }}
-                      onClick={() => setCommunityDietDetail(diet)}>
-                      Ver detalhes
-                    </button>
-                    <button className="btn btn-small" style={{ width:'auto', flex:1 }}
-                      onClick={() => setCommunityDietDetail(diet)}>
-                      Ver / Usar
+                      style={{ display:'flex', alignItems:'center', gap:8, background:'none', border:'none', cursor:'pointer', padding:0 }}>
+                      <CommunityAvatar av={diet.authorAvatar} size={28} />
+                      <span style={{ fontSize:12, color:'var(--text-secondary)' }}>@{diet.authorUsername}</span>
                     </button>
                     {diet.authorUid === authUser?.uid && (
-                      <button className="config-reset-btn" style={{ color:'var(--error)', display:'flex', alignItems:'center', gap:3 }}
+                      <button className="config-reset-btn" style={{ color:'var(--error)', display:'flex', alignItems:'center' }}
                         onClick={async () => {
                           if (!window.confirm('Remover este cardápio da comunidade?')) return
                           await deleteSharedDiet(diet.code)
@@ -4662,6 +4643,18 @@ export default function Home() {
                         <Trash2 size={13}/>
                       </button>
                     )}
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8 }}>
+                    <div>
+                      <div style={{ fontWeight:600, fontSize:14, marginBottom:2 }}>{diet.totalCals} kcal · {diet.dietData.length} refeições</div>
+                      <div style={{ fontSize:12, color:'var(--text-secondary)' }}>
+                        P{diet.macros.p}g · C{diet.macros.c}g · G{diet.macros.g}g · {new Date(diet.createdAt).toLocaleDateString('pt-BR')}
+                      </div>
+                    </div>
+                    <button className="btn btn-small" style={{ width:'auto', flexShrink:0 }}
+                      onClick={() => setCommunityDietDetail(diet)}>
+                      Ver / Usar
+                    </button>
                   </div>
                 </div>
               ))}
