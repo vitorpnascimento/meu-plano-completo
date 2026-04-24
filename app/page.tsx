@@ -873,6 +873,10 @@ export default function Home() {
   const [openAlt,        setOpenAlt]        = useState<string|null>(null)
   const [expandedMeals,  setExpandedMeals]  = useState<Record<string, boolean>>({})
 
+  // ── Header animado ───────────────────────────────────────────────────────────
+  const [headerMsgIdx, setHeaderMsgIdx] = useState(0)
+  const [headerFade,   setHeaderFade]   = useState(true)
+
   // ── Theme ────────────────────────────────────────────────────────────────────
   const [isDark, setIsDark] = useState(false) // light por padrão
 
@@ -1224,6 +1228,36 @@ export default function Home() {
     const t = setTimeout(() => setOnboardingStep(0), 4000)
     return () => clearTimeout(t)
   }, [onboardingStep])
+
+  // Mensagens do header
+  const headerMessages = useMemo(() => {
+    const tab: Record<string, {title:string;sub:string}> = {
+      hoje:           { title:'Bora registrar!',     sub:'Marque suas refeições'  },
+      peso:           { title:'Acompanhe seu peso',  sub:'Progresso consistente'  },
+      'estatísticas': { title:'Sua evolução',        sub:'Dados e tendências'     },
+      comunidade:     { title:'Comunidade',          sub:'Explore cardápios'      },
+      config:         { title:'Configurações',       sub:'Personalize seu plano'  },
+    }
+    if (!userProfile) return [{ title:'Meu Plano', sub:'Dieta · Treino · Progresso' }]
+    const first = userProfile.displayName.split(' ')[0]
+    return [
+      { title:`Olá, ${first}!`,  sub:`@${userProfile.username}`          },
+      tab[activeTab] ?? { title:'Meu Plano', sub:'Consistência vence tudo!' },
+      { title:'Meu Plano',       sub:'Dieta · Treino · Progresso'        },
+    ]
+  }, [userProfile, activeTab])
+
+  useEffect(() => {
+    setHeaderMsgIdx(0); setHeaderFade(true)
+  }, [activeTab])
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setHeaderFade(false)
+      setTimeout(() => { setHeaderMsgIdx(i => (i + 1) % headerMessages.length); setHeaderFade(true) }, 300)
+    }, 3500)
+    return () => clearInterval(t)
+  }, [headerMessages.length])
 
   useEffect(() => {
     if (activeTab === 'comunidade') handleLoadCommunity()
@@ -3909,30 +3943,27 @@ export default function Home() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {userProfile && (
-                <div style={{
-                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                  background: userProfile.avatarType === 'upload' ? 'transparent'
-                    : (['indigo','emerald','rose','orange','purple','cyan','amber','teal'] as const)
-                        .reduce((m,id,i) => ({ ...m, [id]: ['#6366F1','#10B981','#F43F5E','#F97316','#8B5CF6','#06B6D4','#EAB308','#14B8A6'][i] }), {} as any)
-                        [userProfile.avatarPreset ?? 'indigo'] ?? '#6366F1',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 18, overflow: 'hidden', border: '2px solid var(--primary-mid)',
-                }}>
+                <button
+                  onClick={() => setViewProfileModal({ username: userProfile.username, avatar: { type: userProfile.avatarType, preset: userProfile.avatarPreset, url: userProfile.avatarUrl } })}
+                  style={{
+                    width: 36, height: 36, borderRadius: '50%', flexShrink: 0, padding: 0, border: '2px solid var(--primary-mid)',
+                    background: userProfile.avatarType === 'upload' ? 'transparent' : avatarBg(userProfile.avatarPreset),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 18, overflow: 'hidden', cursor: 'pointer',
+                  }}>
                   {userProfile.avatarType === 'upload' && userProfile.avatarUrl
                     ? <img src={userProfile.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="avatar" />
-                    : (['💪','🥗','🎯','🏃','⚡','🏊','⭐','🌿'] as const)[
-                        ['indigo','emerald','rose','orange','purple','cyan','amber','teal'].indexOf(userProfile.avatarPreset ?? 'indigo')
-                      ] ?? '💪'
+                    : avatarEmoji(userProfile.avatarPreset)
                   }
-                </div>
+                </button>
               )}
-              <div>
-                <h1>
-                  {userProfile ? `Olá, ${userProfile.displayName.split(' ')[0]}!` : 'Meu Plano'}
+              <div style={{ overflow: 'hidden' }}>
+                <h1 style={{ opacity: headerFade ? 1 : 0, transition: 'opacity 0.3s ease', whiteSpace: 'nowrap' }}>
+                  {headerMessages[headerMsgIdx]?.title ?? 'Meu Plano'}
                   {' '}<span className="brand-dot" />
                 </h1>
-                <div className="subtitle">
-                  {userProfile ? `@${userProfile.username}` : 'Dieta · Treino · Progresso'}
+                <div className="subtitle" style={{ opacity: headerFade ? 1 : 0, transition: 'opacity 0.3s ease', whiteSpace: 'nowrap' }}>
+                  {headerMessages[headerMsgIdx]?.sub ?? 'Dieta · Treino · Progresso'}
                 </div>
               </div>
             </div>
