@@ -228,9 +228,9 @@ const SHOPPING_PACK: Record<number, { label: string; size: number }> = {
   46: { label: 'L',             size: 1000 },
   47: { label: 'L',             size: 1000 },
   // Iogurte
-  48: { label: 'potes (170g)',  size: 170  },
-  49: { label: 'potes (170g)',  size: 170  },
-  99: { label: 'potes (170g)',  size: 170  },
+  48: { label: 'potes (165g)',  size: 165  },
+  49: { label: 'potes (165g)',  size: 165  },
+  99: { label: 'potes (165g)',  size: 165  },
   // Requeijão
   54: { label: 'potes (200g)',  size: 200  },
   98: { label: 'potes (200g)',  size: 200  },
@@ -352,6 +352,29 @@ function toShoppingLabel(weeklyG: number, tacoId: number | null): string {
   }
   if (weeklyG >= 900) return `${(weeklyG / 1000).toFixed(1).replace('.', ',')} kg`
   return `${weeklyG.toLocaleString('pt-BR')} g`
+}
+
+/** Normaliza nome para chave de deduplicação: remove acentos, pontuação e espaços extras */
+function normShopKey(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[,.()\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Busca o ID TACO para usar o SHOPPING_PACK apenas quando a correspondência é válida.
+ *  Garante que a primeira palavra significativa do nome do item aparece no alimento encontrado,
+ *  evitando falsos positivos como "doce de leite" → "Leite de vaca" → litros. */
+function getValidTacoMatch(baseName: string): { id: number; cat: string } | null {
+  const match = fuzzyMatchTACO(baseName)
+  if (!match) return null
+  const n = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  const matchNorm  = n(match.nome)
+  const firstWord  = n(baseName).split(/[\s,]+/).find(w => w.length >= 3) ?? ''
+  if (!firstWord || !matchNorm.includes(firstWord)) return null
+  return { id: match.id, cat: match.cat }
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -2133,12 +2156,12 @@ export default function Home() {
     for (const meal of meals) {
       for (const item of (meal.items ?? [])) {
         const { baseName, grams } = parseItemName(item.name)
-        const dailyG  = grams ?? 100
-        const weeklyG = dailyG * 7
-        const tacoMatch = fuzzyMatchTACO(baseName)
+        const dailyG    = grams ?? 100
+        const weeklyG   = dailyG * 7
+        const tacoMatch = getValidTacoMatch(baseName)
         const tacoId    = tacoMatch?.id ?? null
         const cat       = TACO_CAT_TO_SHOP[tacoMatch?.cat ?? ''] ?? 'Outros'
-        const key = baseName.toLowerCase().trim()
+        const key = normShopKey(baseName)   // normaliza pontuação e acentos antes de comparar
         const existing  = agg.get(key)
         if (existing) {
           existing.weeklyG += weeklyG
@@ -2169,7 +2192,7 @@ export default function Home() {
         title: m.title,
         items: (m.items ?? []).map(item => {
           const { baseName, grams } = parseItemName(item.name)
-          const tacoId = fuzzyMatchTACO(baseName)?.id ?? null
+          const tacoId = getValidTacoMatch(baseName)?.id ?? null
           const label  = toShoppingLabel((grams ?? 100) * 7, tacoId)
           return { name: baseName, label }
         }),
