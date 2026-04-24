@@ -1832,6 +1832,7 @@ export default function Home() {
     save({ meals: nm, userGoals: ng })
     setGeneratedDiet(null)
     setActiveTab('hoje')
+    setShowShoppingModal(true) // mostra lista de compras logo após salvar a dieta
     // Tela dedicada de onboarding: fecha a tela e marca como concluído
     if (onboardingScreen) {
       setOnboardingScreen(false)
@@ -1843,7 +1844,6 @@ export default function Home() {
     // Conclui onboarding clássico
     if (onboardingStep === 3) {
       setOnboardingStep(4)
-      // Marca como concluído
       if (authUser) localStorage.setItem(`onboarding_done_${authUser.uid}`, '1')
       else          localStorage.setItem('onboarding_done', '1')
     }
@@ -2356,6 +2356,9 @@ export default function Home() {
                     <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
                       <CheckCircle2 size={15}/> Salvar e começar!
                     </button>
+                    <div style={{ marginTop:6, padding:'8px 10px', background:'rgba(var(--primary-rgb, 99,102,241), .07)', borderRadius:8, display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text-secondary)' }}>
+                      <ShoppingCart size={13} style={{ flexShrink:0 }}/> Ao salvar, você verá automaticamente a lista de compras para a semana.
+                    </div>
                   </div>
 
                   {generatedDiet.map((meal, mi) => (
@@ -3617,6 +3620,15 @@ export default function Home() {
             )
           })()}
 
+          {/* Ação rápida: lista de compras */}
+          {meals.some(m => (m.items ?? []).length > 0) && (
+            <button
+              onClick={() => setShowShoppingModal(true)}
+              style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'9px 0', marginBottom:4, background:'var(--surface)', border:'1px dashed var(--border)', borderRadius:10, cursor:'pointer', fontSize:13, color:'var(--text-secondary)', fontWeight:500 }}>
+              <ShoppingCart size={14}/> Lista de Compras Semanal
+            </button>
+          )}
+
           {/* Refeições colapsáveis */}
           {meals.length === 0 || meals.every(m => (m.items ?? []).length === 0) ? (
             <div className="card">
@@ -4538,6 +4550,9 @@ export default function Home() {
                         <button className="btn" style={{ marginTop:8, width:'100%' }} onClick={saveDiet}>
                           <CheckCircle2 size={15}/> Salvar como Meu Cardápio
                         </button>
+                        <div style={{ marginTop:6, padding:'8px 10px', background:'rgba(var(--primary-rgb, 99,102,241), .07)', borderRadius:8, display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--text-secondary)' }}>
+                          <ShoppingCart size={13} style={{ flexShrink:0 }}/> Ao salvar, você verá automaticamente a lista de compras para a semana.
+                        </div>
                       </div>
 
                       {generatedDiet.map((meal, mi) => (
