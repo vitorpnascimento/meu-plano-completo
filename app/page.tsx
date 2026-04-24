@@ -43,6 +43,7 @@ import {
   loadDietByCode,
   updateDietPublic,
   loadPublicDiets,
+  deleteSharedDiet,
   shareSubstitution,
   loadPublicSubstitutions,
   type UserProfile,
@@ -4555,10 +4556,18 @@ export default function Home() {
                 <span className="config-section-label"><Users size={15}/> Cardápios da Comunidade</span>
                 <span className="config-section-desc">Cardápios públicos compartilhados por outros usuários</span>
               </div>
-              <button className="config-reset-btn" style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--primary)' }}
-                onClick={async () => { setCommunityDietsReady(false); const [d,s] = await Promise.all([loadPublicDiets(),loadPublicSubstitutions()]); setCommunityDiets(d); setCommunitySubs(s); setCommunityDietsReady(true) }}>
-                <RefreshCw size={13}/> Atualizar
-              </button>
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+                {firebaseConfigured && authUser && userProfile && (
+                  <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--primary)' }}
+                    onClick={handleShareDiet} disabled={shareDietLoading}>
+                    <Share2 size={13}/> {shareDietLoading ? '...' : 'Compartilhar'}
+                  </button>
+                )}
+                <button className="config-reset-btn" style={{ display:'flex', alignItems:'center', gap:4, fontSize:12, color:'var(--text-secondary)' }}
+                  onClick={async () => { setCommunityDietsReady(false); const [d,s] = await Promise.all([loadPublicDiets(),loadPublicSubstitutions()]); setCommunityDiets(d); setCommunitySubs(s); setCommunityDietsReady(true) }}>
+                  <RefreshCw size={13}/> Atualizar
+                </button>
+              </div>
             </div>
             <div style={{ padding: '0 4px 12px' }}>
               {!communityDietsReady && (
@@ -4594,10 +4603,21 @@ export default function Home() {
                       onClick={() => setCommunityDietDetail(diet)}>
                       Ver detalhes
                     </button>
-                    <button className="btn btn-small" style={{ width:'auto', flex:1 }}
-                      onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) handleUseDiet(diet.dietData) }}>
-                      Usar cardápio
-                    </button>
+                    {diet.authorUid === authUser?.uid ? (
+                      <button className="btn btn-small" style={{ width:'auto', flex:1, background:'var(--error)', color:'#fff' }}
+                        onClick={async () => {
+                          if (!window.confirm('Remover este cardápio da comunidade?')) return
+                          await deleteSharedDiet(diet.code)
+                          setCommunityDiets(prev => prev.filter(d => d.code !== diet.code))
+                        }}>
+                        <Trash2 size={13}/> Remover
+                      </button>
+                    ) : (
+                      <button className="btn btn-small" style={{ width:'auto', flex:1 }}
+                        onClick={() => { if (window.confirm('Isso vai substituir seu cardápio atual. Continuar?')) handleUseDiet(diet.dietData) }}>
+                        Usar cardápio
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -5132,26 +5152,30 @@ export default function Home() {
                 <span className="config-section-label"><ClipboardList size={15}/> Meu Cardápio</span>
                 <span className="config-section-desc">Edite e organize seus alimentos</span>
               </div>
-              <ChevronDown size={15} className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`} />
+              <div style={{ display:'flex', alignItems:'center', gap:6 }} onClick={e => e.stopPropagation()}>
+                {firebaseConfigured && authUser && userProfile && (
+                  <button className="config-reset-btn" title="Compartilhar cardápio"
+                    style={{ color:'var(--primary)', display:'flex', alignItems:'center', gap:4, fontSize:12 }}
+                    onClick={handleShareDiet} disabled={shareDietLoading}>
+                    <Share2 size={14}/> {shareDietLoading ? '...' : 'Compartilhar'}
+                  </button>
+                )}
+                {firebaseConfigured && authUser && (
+                  <button className="config-reset-btn" title="Importar cardápio"
+                    style={{ color:'var(--text-secondary)', display:'flex', alignItems:'center', gap:4, fontSize:12 }}
+                    onClick={() => { setDietCodeModal(true); setDietCodeInput(''); setDietCodePreview(null); setDietCodeError(''); setDietCodeConfirm(false) }}>
+                    <Download size={14}/> Importar
+                  </button>
+                )}
+                <ChevronDown size={15} className={`config-section-arrow ${configSections.cardapio ? 'open' : ''}`} />
+              </div>
             </div>
             {configSections.cardapio && (
               <div className="config-section-body">
-                {/* ── Buscar TACO + Lista de Compras + Comunidade ── */}
+                {/* ── Buscar TACO + Lista de Compras ── */}
                 <div style={{ display:'flex', gap:6, marginBottom:16, marginTop:8, flexWrap:'wrap' }}>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => openTACO(0)}><Search size={13}/> Buscar TACO</button>
                   <button className="btn btn-small" style={{ width:'auto' }} onClick={() => setShowShoppingModal(true)}><ShoppingCart size={13}/> Lista de Compras</button>
-                  {firebaseConfigured && authUser && userProfile && (
-                    <button className="btn btn-small" style={{ width:'auto', background:'var(--surface-2)', color:'var(--text-primary)' }}
-                      onClick={handleShareDiet} disabled={shareDietLoading}>
-                      <Share2 size={13}/> {shareDietLoading ? 'Gerando...' : 'Compartilhar'}
-                    </button>
-                  )}
-                  {firebaseConfigured && authUser && (
-                    <button className="btn btn-small" style={{ width:'auto', background:'var(--surface-2)', color:'var(--text-primary)' }}
-                      onClick={() => { setDietCodeModal(true); setDietCodeInput(''); setDietCodePreview(null); setDietCodeError(''); setDietCodeConfirm(false) }}>
-                      <Download size={13}/> Importar
-                    </button>
-                  )}
                 </div>
 
                 {/* ── Adicionar alimento manual ── */}
@@ -5522,7 +5546,7 @@ export default function Home() {
                 onClick={() => handleTogglePublic(!shareDietModal.isPublic)}
                 style={{
                   width:42, height:24, borderRadius:12, border:'none', cursor:'pointer',
-                  background: shareDietModal.isPublic ? 'var(--primary)' : 'var(--surface-2)',
+                  background: shareDietModal.isPublic ? 'var(--primary)' : '#9CA3AF',
                   transition:'background 0.2s', flexShrink:0,
                   display:'flex', alignItems:'center',
                   paddingLeft: shareDietModal.isPublic ? 20 : 4,

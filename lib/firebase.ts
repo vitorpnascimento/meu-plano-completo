@@ -308,6 +308,16 @@ export async function updateDietPublic(code: string, isPublic: boolean): Promise
   }
 }
 
+export async function deleteSharedDiet(code: string): Promise<boolean> {
+  if (!init() || !_db) return false
+  try {
+    await deleteDoc(doc(_db, 'sharedDiets', code))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function loadPublicDiets(): Promise<SharedDiet[]> {
   if (!init() || !_db) return []
   try {
