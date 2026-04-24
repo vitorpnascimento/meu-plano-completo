@@ -58,9 +58,7 @@ function init(): boolean {
 
 export async function createAccount(email: string, password: string) {
   if (!init() || !_auth) throw new Error('Firebase not configured')
-  const cred = await createUserWithEmailAndPassword(_auth, email, password)
-  await fbSendEmailVerification(cred.user).catch(() => {})
-  return cred
+  return createUserWithEmailAndPassword(_auth, email, password)
 }
 
 export async function resendVerificationEmail(user: User): Promise<void> {

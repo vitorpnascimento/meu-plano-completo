@@ -41,7 +41,6 @@ import {
   type UserProfile,
 } from '../lib/firebase'
 import LoginScreen from './components/LoginScreen'
-import EmailVerification from './components/EmailVerification'
 import ProfileSetup from './components/ProfileSetup'
 import {
   searchTACO, fuzzyMatchTACO, generateDiet, getSubstitutes,
@@ -2222,17 +2221,6 @@ export default function Home() {
 
   if (firebaseConfigured && !authUser) {
     return <LoginScreen />
-  }
-
-  // ── Verificação de email (apenas para contas novas — criadas há menos de 1h) ──
-  const isNewUnverified =
-    firebaseConfigured &&
-    authUser &&
-    !authUser.emailVerified &&
-    (Date.now() - new Date(authUser.metadata.creationTime!).getTime()) < 3_600_000
-
-  if (isNewUnverified) {
-    return <EmailVerification user={authUser!} onLogout={handleLogout} />
   }
 
   // ── Perfil de usuário ────────────────────────────────────────────────────────
