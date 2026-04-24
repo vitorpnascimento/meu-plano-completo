@@ -1171,11 +1171,33 @@ export default function Home() {
 
   // ── Ações: Metas ────────────────────────────────────────────────────────────
 
+  // Estado de rascunho para inputs de meta — permite campo vazio durante digitação
+  const [goalDrafts, setGoalDrafts] = useState<Partial<Record<keyof typeof DEFAULT_GOALS, string>>>({})
+
+  const handleGoalChange = (key: keyof typeof DEFAULT_GOALS, val: string) => {
+    setGoalDrafts(prev => ({ ...prev, [key]: val }))
+  }
+
+  const handleGoalBlur = (key: keyof typeof DEFAULT_GOALS) => {
+    const draft = goalDrafts[key]
+    if (draft === undefined) return
+    const num = parseInt(draft)
+    const prev = userGoals[key]
+    // Valor inválido ou zero → mantém o valor anterior
+    const final = (!draft || isNaN(num) || num <= 0) ? prev : num
+    setGoalDrafts(prev => { const n = { ...prev }; delete n[key]; return n })
+    if (final !== userGoals[key]) {
+      const ng = { ...userGoals, [key]: final }
+      setUserGoals(ng); save({ userGoals: ng })
+      if (meals.some(m => (m.items ?? []).length > 0)) setSuggestRegen(true)
+    }
+  }
+
+  // Mantido para compatibilidade com outros usos (ex: geração de dieta via calculadora)
   const updateGoal = (key: keyof typeof DEFAULT_GOALS, val: string) => {
     const num = parseInt(val); if (isNaN(num) || num <= 0) return
     const ng = { ...userGoals, [key]: num }
     setUserGoals(ng); save({ userGoals: ng })
-    // Se qualquer meta mudou e já existe um cardápio, avisa o usuário
     if (num !== userGoals[key] && meals.some(m => (m.items ?? []).length > 0)) {
       setSuggestRegen(true)
     }
@@ -2136,6 +2158,7 @@ export default function Home() {
                         <div className="custom-goal-row">
                           <input type="number" className="login-input" style={{ flex:1 }}
                             value={customCalGoal} onChange={e => setCustomCalGoal(e.target.value)}
+                            onFocus={e => e.currentTarget.select()}
                             placeholder="Ex: 1500" />
                           <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
                         </div>
@@ -3975,7 +3998,14 @@ export default function Home() {
                     <div key={key} className="config-goal-row">
                       <label className="config-goal-label">{label}</label>
                       <div className="config-goal-input-wrap">
-                        <input type="number" className="config-goal-input" value={userGoals[key]} onChange={e => updateGoal(key, e.target.value)} />
+                        <input
+                          type="number"
+                          className="config-goal-input"
+                          value={goalDrafts[key] ?? userGoals[key]}
+                          onChange={e => handleGoalChange(key, e.target.value)}
+                          onBlur={() => handleGoalBlur(key)}
+                          onFocus={e => e.currentTarget.select()}
+                        />
                         <span className="config-goal-unit">{unit}</span>
                       </div>
                     </div>
@@ -4206,6 +4236,7 @@ export default function Home() {
                           <div className="custom-goal-row">
                             <input type="number" className="login-input" style={{ flex:1 }}
                               value={customCalGoal} onChange={e => setCustomCalGoal(e.target.value)}
+                              onFocus={e => e.currentTarget.select()}
                               placeholder="Ex: 1500" />
                             <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
                           </div>
@@ -4268,7 +4299,9 @@ export default function Home() {
                   <label className="calc-label">Meta calórica diária</label>
                   <div style={{ display:'flex', gap:8, alignItems:'center' }}>
                     <input type="number" className="login-input" style={{ flex:1 }}
-                      value={dietTarget} onChange={e => setDietTarget(e.target.value)} placeholder="Ex: 1600" />
+                      value={dietTarget} onChange={e => setDietTarget(e.target.value)}
+                      onFocus={e => e.currentTarget.select()}
+                      placeholder="Ex: 1600" />
                     <span style={{ fontSize:13, color:'var(--text-secondary)', whiteSpace:'nowrap' }}>kcal/dia</span>
                   </div>
                   <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:4 }}>
