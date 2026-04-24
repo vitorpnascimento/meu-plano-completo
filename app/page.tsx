@@ -4473,7 +4473,7 @@ export default function Home() {
                         }
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 15, fontWeight: 700, truncate: true }}>{userProfile.displayName}</div>
+                        <div style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{userProfile.displayName}</div>
                         <div style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 600 }}>@{userProfile.username}</div>
                         {userProfile.birthDate && (
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
